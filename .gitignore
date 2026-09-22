@@ -30,8 +30,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files — .env holds the Picovoice AccessKey and the tailnet host
+.env
 .env*.local
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -39,5 +41,7 @@ yarn-error.*
 example
 
 # generated native folders
+# NOTE: /android is intentionally NOT ignored. We run `expo prebuild` once and then
+# hand-edit the Kotlin (VoiceInteractionService, wake foreground service), so the
+# native project is source, not build output. See CLAUDE.md "Prebuild is one-way".
 /ios
-/android

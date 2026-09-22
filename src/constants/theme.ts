@@ -1,65 +1,61 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Igris design tokens.
+ *
+ * The palette encodes system state rather than decorating it. Igris runs on two
+ * lanes (PLAN.md decision #4): the Mac over Tailscale, which is instant, free and
+ * has every tool; or Render, which is slow, paid and knows less. Warm tungsten
+ * means the Mac answered. Cold steel means Render did. You can see which brain
+ * you are talking to before you read a word.
+ *
+ * Ground is a warm-shifted ink, not #000 and not a neutral near-black — Igris is
+ * a knight serving a roadside dhaba at night, lit by kerosene, not a spaceship.
  */
 
-import '@/global.css';
+import type { Lane } from '@/lib/config';
 
-import { Platform } from 'react-native';
+export const Palette = {
+  ground: '#141118',
+  surface: '#1E1922',
+  surfaceLift: '#272130',
+  hairline: '#2E2833',
 
-export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+  text: '#EDE7DC',
+  muted: '#8A8178',
+  faint: '#5A5450',
+
+  local: '#E8A33D',
+  cloud: '#6E8CA8',
+  alert: '#C7623F',
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type { Lane };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export const laneColor = (lane: Lane) => (lane === 'local' ? Palette.local : Palette.cloud);
 
-export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+/**
+ * Two families, clearly distinct, each with one job. Newsreader is Igris's
+ * speaking voice; IBM Plex Sans is everything you type and every control. The
+ * asymmetry is how you tell who is talking, which is why there are no bubbles.
+ * Plex also ships Devanagari, which matters the moment dhaba talk turns Hindi.
+ */
+export const Font = {
+  voice: 'Newsreader_400Regular',
+  voiceMedium: 'Newsreader_500Medium',
+  voiceItalic: 'Newsreader_400Regular_Italic',
+  ui: 'IBMPlexSans_400Regular',
+  uiMedium: 'IBMPlexSans_500Medium',
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+/** Modular scale, ~1.25. Serif gets more leading than the sans, as it should. */
+export const Type = {
+  micro: { fontSize: 11, lineHeight: 15 },
+  small: { fontSize: 13, lineHeight: 19 },
+  ask: { fontSize: 15, lineHeight: 22 },
+  answer: { fontSize: 18, lineHeight: 28 },
+  title: { fontSize: 27, lineHeight: 32 },
+} as const;
+
+export const Space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 } as const;
+
+/** Reading measure. Below ~80 characters, per Bringhurst; on a phone this is the gutter. */
+export const Gutter = 20;

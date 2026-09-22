@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "note": "Igris downloadable assets, fetched at runtime from EXPO_PUBLIC_ASSET_MANIFEST_URL so a new model never needs an app rebuild. v2 replaced the two loose Piper files with the sherpa-onnx bundle: sherpa needs tokens.txt and espeak-ng-data/ for phonemisation, which Piper's own .onnx.json does not provide. Repoint url at this repo's GitHub Release once assets-v1 is cut (PLAN.md decision #9).",
+  "assets": [
+    {
+      "id": "voice",
+      "kind": "archive",
+      "title": "Igris voice",
+      "detail": "Piper en_GB-alan-medium, packaged for sherpa-onnx with its phoneme data. The same voice the Mac speaks with.",
+      "file": "vits-piper-en_GB-alan-medium.tar.bz2",
+      "dir": "vits-piper-en_GB-alan-medium",
+      "probe": "tokens.txt",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2",
+      "bytes": 67220121,
+      "md5": "f1ee3881f1db4515487f5d5cf2a0600a",
+      "extractedBytes": 82837504,
+      "requiredFor": "speech"
+    }
+  ]
+}

@@ -1,98 +1,166 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Composer } from '@/components/composer';
+import { LaneBadge } from '@/components/lane-badge';
+import { Turn, type TurnState } from '@/components/turn';
+import { Answer, Ask, Meta, Title } from '@/components/typography';
+import { Gutter, Palette, Space } from '@/constants/theme';
+import type { Lane } from '@/lib/config';
+import { AuthError, streamChat } from '@/lib/maestro';
+import { useSpeech } from '@/lib/voice/use-speech';
+import { useSession } from '@/state/session';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+/** Real questions, not feature advertisements — tapping one asks it. */
+const OPENERS = ["what's today's revenue", 'who owes money', 'weather in indore'];
+
+export default function Transcript() {
+  const { lane, probing, refreshLane, signOut } = useSession();
+  const speech = useSpeech();
+  const [turns, setTurns] = useState<TurnState[]>([]);
+  const [busy, setBusy] = useState(false);
+  const scroller = useRef<ScrollView>(null);
+
+  const ask = useCallback(
+    async (message: string) => {
+      const id = `${Date.now()}`;
+      const startedAt = Date.now();
+
+      setTurns((prev) => [
+        ...prev,
+        {
+          id,
+          ask: message,
+          answer: null,
+          status: 'Igris is thinking…',
+          error: null,
+          lane,
+          elapsedMs: null,
+        },
+      ]);
+      setBusy(true);
+      void speech.stop(); // a new question interrupts the old answer
+
+      const patch = (change: Partial<TurnState>) =>
+        setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...change } : t)));
+
+      try {
+        let answered = false;
+        await streamChat({
+          lane,
+          message,
+          onEvent: (event) => {
+            if (event.kind === 'answer') {
+              answered = true;
+              patch({ answer: event.message, status: null, elapsedMs: Date.now() - startedAt });
+              void speech.speak(event.message);
+            } else {
+              patch({ status: event.message });
+            }
+          },
+        });
+        // maestro closed the stream without ever emitting a `response`. Say so
+        // rather than leaving a turn stuck on "thinking" forever.
+        if (!answered) {
+          patch({ status: null, error: 'Igris closed the connection without answering.' });
+        }
+      } catch (err) {
+        patch({
+          status: null,
+          error:
+            err instanceof AuthError
+              ? 'Your session ended. Sign out and back in.'
+              : err instanceof Error
+                ? err.message
+                : 'Could not reach Igris.',
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [lane, speech]
+  );
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
+    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <Title>Igris</Title>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => router.push('/voice')} hitSlop={12} accessibilityRole="button">
+            <Meta>Voice</Meta>
+          </Pressable>
+          <LaneBadge lane={lane} probing={probing} onPress={() => void refreshLane()} />
+        </View>
+      </View>
+
+      <ScrollView
+        ref={scroller}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
+        keyboardDismissMode="on-drag">
+        {turns.length === 0 ? (
+          <Empty lane={lane} onPick={ask} onSignOut={() => void signOut()} />
+        ) : (
+          turns.map((turn) => <Turn key={turn.id} turn={turn} />)
+        )}
+      </ScrollView>
+
+      <Composer lane={lane} busy={busy} onSend={(m) => void ask(m)} />
+    </SafeAreaView>
   );
 }
 
-export default function HomeScreen() {
+function Empty({
+  lane,
+  onPick,
+  onSignOut,
+}: {
+  lane: Lane;
+  onPick: (message: string) => void;
+  onSignOut: () => void;
+}) {
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <View style={styles.empty}>
+      <Answer style={styles.emptyLede}>
+        {lane === 'local'
+          ? 'The Mac is awake. Everything is available.'
+          : 'Answering from Render, so the dhaba is out of reach and the first reply takes about half a minute.'}
+      </Answer>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      <View style={styles.openers}>
+        {OPENERS.map((opener) => (
+          <Pressable key={opener} onPress={() => onPick(opener)} accessibilityRole="button">
+            <Ask style={styles.opener}>{opener}</Ask>
+          </Pressable>
+        ))}
+      </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <Pressable onPress={onSignOut} accessibilityRole="button" style={styles.signOut}>
+        <Meta>Sign out</Meta>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  screen: { flex: 1, backgroundColor: Palette.ground },
+  header: {
     flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    justifyContent: 'space-between',
+    paddingHorizontal: Gutter,
+    paddingTop: Space.sm,
+    paddingBottom: Space.lg,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Space.lg },
+  scroll: { flex: 1 },
+  scrollContent: { paddingTop: Space.sm, paddingBottom: Space.xl },
+  empty: { paddingHorizontal: Gutter, gap: Space.xl },
+  emptyLede: { color: Palette.muted, maxWidth: 420 },
+  openers: { gap: Space.md },
+  opener: { color: Palette.text },
+  signOut: { marginTop: Space.xxl, alignSelf: 'flex-start' },
 });
