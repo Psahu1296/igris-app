@@ -1,6 +1,6 @@
 import { fetch as streamFetch } from 'expo/fetch';
 
-import { LOCAL_URL, PROBE_TIMEOUT_MS, SESSION_ID, urlFor, type Lane } from '@/lib/config';
+import { LOCAL_URL, PROBE_TIMEOUT_MS, urlFor, type Lane } from '@/lib/config';
 import { createSseParser } from '@/lib/sse';
 import * as secure from '@/lib/secure';
 
@@ -68,6 +68,34 @@ async function tokenFor(lane: Lane): Promise<string> {
 }
 
 /**
+ * A request that carries the lane's bearer token and survives its eviction.
+ *
+ * maestro keeps ONE session_token per credential row, so signing in anywhere else
+ * silently invalidates the phone's. That makes a 401 routine rather than
+ * exceptional, and every authenticated call needs the same re-login-once dance —
+ * so it lives here instead of being copied per endpoint.
+ */
+export async function authedFetch(
+  lane: Lane,
+  path: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  const run = (token: string) =>
+    fetch(`${urlFor(lane)}${path}`, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
+    });
+
+  const res = await run(await tokenFor(lane));
+  if (res.status !== 401) return res;
+
+  const creds = await secure.loadCredentials();
+  if (!creds) throw new AuthError('Not signed in.');
+  await secure.clearToken(lane);
+  return run(await login(lane, creds.username, creds.password));
+}
+
+/**
  * Send recorded audio to the Mac and get words back.
  *
  * The phone does not transcribe. A 20M on-device recogniser heard "how is the weather
@@ -77,22 +105,11 @@ async function tokenFor(lane: Lane): Promise<string> {
  * must keep it on the local lane.
  */
 export async function transcribe(lane: Lane, wav: Uint8Array): Promise<string> {
-  const run = (token: string) =>
-    fetch(`${urlFor(lane)}/stt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'audio/wav', Authorization: `Bearer ${token}` },
-      body: wav as unknown as BodyInit,
-    });
-
-  let res = await run(await tokenFor(lane));
-
-  // Same single-session eviction as streamChat: re-login once and retry.
-  if (res.status === 401) {
-    const creds = await secure.loadCredentials();
-    if (!creds) throw new AuthError('Not signed in.');
-    await secure.clearToken(lane);
-    res = await run(await login(lane, creds.username, creds.password));
-  }
+  const res = await authedFetch(lane, '/stt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/wav' },
+    body: wav as unknown as BodyInit,
+  });
 
   if (res.status === 404) {
     throw new Error('This Igris has no /stt endpoint. The Mac needs to be running a current maestro.');
@@ -119,10 +136,12 @@ export type TurnEvent =
 export async function streamChat(opts: {
   lane: Lane;
   message: string;
+  /** Which conversation this turn belongs to — maestro uses it as the thread_id. */
+  sessionId: string;
   onEvent: (event: TurnEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, onEvent, signal } = opts;
+  const { lane, message, sessionId, onEvent, signal } = opts;
 
   const run = async (token: string) => {
     const res = await streamFetch(`${urlFor(lane)}/chat/stream`, {
@@ -132,7 +151,7 @@ export async function streamChat(opts: {
         Accept: 'text/event-stream',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ message, session_id: SESSION_ID }),
+      body: JSON.stringify({ message, session_id: sessionId }),
       signal,
     });
     return res;

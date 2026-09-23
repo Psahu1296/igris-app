@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
+import { SESSION_ID } from '@/lib/config';
 import { login, probeLane, type Lane } from '@/lib/maestro';
+import { newThreadId } from '@/lib/threads';
 import * as secure from '@/lib/secure';
 
 type Status = 'loading' | 'signed-out' | 'signed-in';
@@ -11,6 +13,12 @@ type SessionValue = {
   lane: Lane;
   /** True while a probe is deciding which brain to use. */
   probing: boolean;
+  /** The open conversation. maestro uses this verbatim as the owner's thread_id. */
+  sessionId: string;
+  /** Open an existing conversation by its thread_id. */
+  openSession: (id: string) => Promise<void>;
+  /** Begin a fresh conversation, with its own memory on maestro's side. */
+  startSession: () => Promise<string>;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshLane: () => Promise<void>;
@@ -22,6 +30,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
   const [lane, setLane] = useState<Lane>('cloud');
   const [probing, setProbing] = useState(false);
+  const [sessionId, setSessionId] = useState<string>(SESSION_ID);
+
+  // Restore the conversation that was open last, so reopening the app does not
+  // silently start talking into a different thread than the one on screen before.
+  useEffect(() => {
+    void secure.loadSession().then((saved) => {
+      if (saved) setSessionId(saved);
+    });
+  }, []);
+
+  const openSession = useCallback(async (id: string) => {
+    setSessionId(id);
+    await secure.saveSession(id);
+  }, []);
+
+  const startSession = useCallback(async () => {
+    const id = newThreadId();
+    setSessionId(id);
+    await secure.saveSession(id);
+    return id;
+  }, []);
 
   const refreshLane = useCallback(async () => {
     setProbing(true);
@@ -65,12 +94,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await secure.clearAll();
+    setSessionId(SESSION_ID);
     setStatus('signed-out');
   }, []);
 
   const value = useMemo(
-    () => ({ status, lane, probing, signIn, signOut, refreshLane }),
-    [status, lane, probing, signIn, signOut, refreshLane]
+    () => ({ status, lane, probing, sessionId, openSession, startSession, signIn, signOut, refreshLane }),
+    [status, lane, probing, sessionId, openSession, startSession, signIn, signOut, refreshLane]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

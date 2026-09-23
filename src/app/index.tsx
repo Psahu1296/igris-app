@@ -1,12 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AiCore } from '@/components/ai-core';
 import { Composer } from '@/components/composer';
+import { Sessions } from '@/components/sessions';
 import { LaneBadge } from '@/components/lane-badge';
 import { Turn, type TurnState } from '@/components/turn';
 import { Answer, Meta, Title } from '@/components/typography';
@@ -14,6 +15,7 @@ import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme
 import type { Lane } from '@/lib/config';
 import { AuthError, streamChat } from '@/lib/maestro';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
+import { threadMessages } from '@/lib/threads';
 import { useListening } from '@/lib/voice/use-listening';
 import { useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
@@ -26,13 +28,59 @@ const OPENERS = [
 ];
 
 export default function Transcript() {
-  const { lane, probing, refreshLane, signOut } = useSession();
+  const { lane, probing, refreshLane, signOut, sessionId, openSession, startSession } = useSession();
   const speech = useSpeech();
   const [turns, setTurns] = useState<TurnState[]>([]);
   const [busy, setBusy] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
   const listening = useListening(lane);
+  const [browsing, setBrowsing] = useState(false);
+
+  /**
+   * Load a conversation's transcript whenever the open thread changes.
+   *
+   * maestro is the record, so this replaces whatever is on screen rather than
+   * merging: the alternative is the previous conversation's turns bleeding into
+   * the one you just opened.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    // Clearing synchronously is the point: the transcript on screen belongs to the
+    // conversation we are leaving, and showing it under the new one's title —
+    // even for the few frames a local fetch takes — reads as data corruption.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTurns([]);
+    threadMessages(lane, sessionId)
+      .then((messages) => {
+        if (cancelled) return;
+        const restored: TurnState[] = [];
+        for (const message of messages) {
+          if (message.role === 'user') {
+            restored.push({
+              id: `${message.created_at}-${restored.length}`,
+              ask: message.content,
+              answer: null,
+              status: null,
+              error: null,
+              lane,
+              elapsedMs: null,
+            });
+          } else if (restored.length > 0) {
+            // Pair the answer onto the question above it; maestro stores them as
+            // separate rows because that is what the table is, not what a turn is.
+            restored[restored.length - 1].answer = message.content;
+          }
+        }
+        setTurns(restored);
+      })
+      .catch(() => {
+        // A thread with no transcript yet is the normal case for a new session.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lane, sessionId]);
 
   const ask = useCallback(
     async (message: string) => {
@@ -62,6 +110,7 @@ export default function Transcript() {
         await streamChat({
           lane,
           message,
+          sessionId,
           onEvent: (event) => {
             if (event.kind === 'answer') {
               answered = true;
@@ -91,7 +140,7 @@ export default function Transcript() {
         setBusy(false);
       }
     },
-    [lane, speech]
+    [lane, sessionId, speech]
   );
 
   return (
@@ -146,6 +195,21 @@ export default function Transcript() {
           }}
         />
       </View>
+
+      <Sessions
+        visible={browsing}
+        lane={lane}
+        currentId={sessionId}
+        onOpen={(id) => {
+          setBrowsing(false);
+          void openSession(id);
+        }}
+        onNew={() => {
+          setBrowsing(false);
+          void startSession();
+        }}
+        onClose={() => setBrowsing(false)}
+      />
     </SafeAreaView>
   );
 }

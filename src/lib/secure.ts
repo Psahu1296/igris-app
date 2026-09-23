@@ -15,6 +15,8 @@ import type { Lane } from '@/lib/maestro';
 const USERNAME = 'igris.username';
 const PASSWORD = 'igris.password';
 const tokenKey = (lane: Lane) => `igris.token.${lane}`;
+// Not a secret, but it lives here so it is cleared with everything else on sign-out.
+const SESSION = 'igris.session';
 
 export type Credentials = { username: string; password: string };
 
@@ -36,10 +38,15 @@ export const loadToken = (lane: Lane) => SecureStore.getItemAsync(tokenKey(lane)
 
 export const clearToken = (lane: Lane) => SecureStore.deleteItemAsync(tokenKey(lane));
 
+export const saveSession = (id: string) => SecureStore.setItemAsync(SESSION, id);
+
+export const loadSession = () => SecureStore.getItemAsync(SESSION);
+
 export async function clearAll() {
   await Promise.all([
     SecureStore.deleteItemAsync(USERNAME),
     SecureStore.deleteItemAsync(PASSWORD),
+    SecureStore.deleteItemAsync(SESSION),
     clearToken('local'),
     clearToken('cloud'),
   ]);
