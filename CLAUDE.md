@@ -72,9 +72,18 @@ Consequences, in order of how much they will bite:
   must match `MAESTRO_SESSION_ID` in `maestro/.env` to share one continuous Igris.
   That value is **`voice-v2`**, not `voice`: the `voice` thread was retired on 2026-06-18
   with poisoned memory, and maestro will resume it without complaint if you ask it to.
-- **Voice is all on-device** via `react-native-sherpa-onnx`: silero VAD → sherpa STT →
-  (network) → Piper `en_GB-alan-medium` TTS. Same pipeline shape as `maestro/voice/`
-  (`vad.py` → `stt.py` → `brain.py` → `tts.py`), so read those when in doubt about ordering.
+- **Voice is all on-device** via `react-native-sherpa-onnx`: mic → streaming STT →
+  (network) → Piper `en_GB-alan-medium` TTS. Note this is one stage shorter than
+  `maestro/voice/` (`vad.py` → `stt.py` → `brain.py` → `tts.py`): **there is no VAD
+  stage, and there cannot be.** `react-native-sherpa-onnx/vad` is a documented
+  placeholder whose every function throws "Not yet implemented", so the library's
+  claim to cover TTS+STT+VAD in one dependency is only two thirds true. What VAD was
+  needed for — knowing the speaker stopped — is built into the streaming recogniser as
+  endpoint detection (rule1 2.4s silence, rule2 1.4s + speech, rule3 20s cap).
+- **STT models must be ONLINE types** (transducer, paraformer, zipformer2_ctc,
+  nemo_ctc, tone_ctc). Whisper is offline-only and cannot stream, however familiar it
+  is from the Python side. We use the kroko streaming zipformer transducer: 55MB down,
+  68MB unpacked, `encoder/decoder/joiner.onnx` + `tokens.txt`.
 - **Models are never bundled.** They download on first run from GitHub Releases on this
   repo against `assets/manifest.json` (size + MD5 verified — see Gotchas). ~110–160MB.
 
@@ -115,6 +124,20 @@ released with no underruns. Download to speech took under 20s on 5G.
 
 **Expo Go no longer runs this app** — a TurboModule is not in the Expo Go binary. Use
 `eas build --profile development` and run Metro against the dev client.
+
+## Two traps that cost real time on 2026-09-23
+
+- **Editing `AndroidManifest.xml` does nothing until you rebuild.** JS changes hot-reload
+  through Metro; native manifest changes do not. Adding `RECORD_AUDIO` and tapping the
+  mic produced *no dialog and no error* — `PermissionsAndroid.request` cannot prompt for
+  a permission the installed APK never declared, and it fails silently. Check with
+  `adb shell dumpsys package com.psahu.igris | sed -n '/requested permissions/,/install/p'`
+  before debugging the JS. An arm64 incremental rebuild is ~16s, so just rebuild.
+- **Model readiness is a filesystem check, so it must not be computed during render.**
+  `modelState()` stats the disk. Downloading a model does not re-render the transcript
+  screen, so the mic button stayed hidden until the app was restarted. The hooks now
+  hold readiness in state and refresh it via `useFocusEffect`, which fires on first
+  focus and again when you come back from the download screen.
 
 ## Conventions
 - Route files live in `src/app/` and **only** route files. Components, hooks and clients

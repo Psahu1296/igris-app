@@ -1,3 +1,4 @@
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
 import { fetchManifest, type AssetSpec } from '@/lib/assets/manifest';
@@ -31,7 +32,19 @@ export function useSpeech() {
     };
   }, []);
 
-  const available = voice !== null && speechStatus(voice).ready;
+  // Same filesystem-readiness trap as useListening: a download does not re-render
+  // this screen, so re-read on mount and on focus rather than during render.
+  const [ready, setReady] = useState(false);
+  const refreshReady = useCallback(() => {
+    setReady(voice !== null && speechStatus(voice).ready);
+  }, [voice]);
+
+  // useFocusEffect runs on first focus too, and re-runs when the callback's
+  // identity changes — which is exactly when the manifest fetch resolves. So it
+  // covers mount and return-from-download without a second effect.
+  useFocusEffect(refreshReady);
+
+  const available = ready;
 
   const speak = useCallback(
     async (text: string) => {

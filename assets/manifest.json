@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "note": "Igris downloadable assets, fetched at runtime from EXPO_PUBLIC_ASSET_MANIFEST_URL so a new model never needs an app rebuild. v2 replaced the two loose Piper files with the sherpa-onnx bundle: sherpa needs tokens.txt and espeak-ng-data/ for phonemisation, which Piper's own .onnx.json does not provide. Repoint url at this repo's GitHub Release once assets-v1 is cut (PLAN.md decision #9).",
+  "version": 3,
+  "note": "Igris downloadable assets, fetched at runtime from EXPO_PUBLIC_ASSET_MANIFEST_URL so a new model never needs an app rebuild. v2 replaced the two loose Piper files with the sherpa-onnx bundle: sherpa needs tokens.txt and espeak-ng-data/ for phonemisation, which Piper's own .onnx.json does not provide. v3 adds the ears. Repoint url at this repo's GitHub Release once assets-v1 is cut (PLAN.md decision #9).",
   "assets": [
     {
       "id": "voice",
@@ -15,6 +15,20 @@
       "md5": "f1ee3881f1db4515487f5d5cf2a0600a",
       "extractedBytes": 82837504,
       "requiredFor": "speech"
+    },
+    {
+      "id": "ears",
+      "kind": "archive",
+      "title": "Igris ears",
+      "detail": "Streaming Zipformer transducer, English. Recognises while you speak and detects when you stop, so no separate VAD is needed.",
+      "file": "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2",
+      "dir": "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
+      "probe": "tokens.txt",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2",
+      "bytes": 57267600,
+      "md5": "fbca004bd1b452680df761660b33f540",
+      "extractedBytes": 71237877,
+      "requiredFor": "listening"
     }
   ]
 }
