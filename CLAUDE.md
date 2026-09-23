@@ -80,6 +80,20 @@ Consequences, in order of how much they will bite:
   claim to cover TTS+STT+VAD in one dependency is only two thirds true. What VAD was
   needed for — knowing the speaker stopped — is built into the streaming recogniser as
   endpoint detection (rule1 2.4s silence, rule2 1.4s + speech, rule3 20s cap).
+- **The STT model must match the bundled sherpa-onnx vintage, or the app dies.** Picking
+  the newest streaming zipformer (kroko 2025-08) hard-crashed the process with
+  `SIGABRT` / "pthread_mutex_lock called on a destroyed mutex" the instant the mic was
+  tapped. The cause is one warning line above the abort:
+  `online-zipformer-transducer-model.cc:InitEncoder: 'attention_dims' does not exist in
+  the metadata`. Kroko is a **zipformer2** export (its encoder metadata carries
+  `query_head_dims`/`num_heads`), but `modelType: 'auto'` maps it onto the **v1**
+  transducer loader, which requires `attention_dims` and aborts natively rather than
+  returning an error. There is no zipformer2 *transducer* in the library's online type
+  list, so the fix is a v1-era model: we pin
+  `sherpa-onnx-streaming-zipformer-en-20M-2023-02-17-mobile`, whose encoder metadata
+  does contain `attention_dims`. **A native abort cannot be caught from JS**, so the
+  only defence is pinning a verified model — before changing it, extract the archive and
+  check with `strings encoder*.onnx | grep -c attention_dims`.
 - **STT models must be ONLINE types** (transducer, paraformer, zipformer2_ctc,
   nemo_ctc, tone_ctc). Whisper is offline-only and cannot stream, however familiar it
   is from the Python side. We use the kroko streaming zipformer transducer: 55MB down,
