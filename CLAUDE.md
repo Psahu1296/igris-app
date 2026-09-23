@@ -45,6 +45,17 @@ Consequences, in order of how much they will bite:
   Mac over Tailscale, running Ollama, all 9 tools, ~1s. `cloud` = Render, running Claude
   via maestro's `PERSONA_MODEL`, 8 tools, ~34s cold start. A health probe picks the lane;
   the active lane is always visible in the UI. **maestro needs no changes for this.**
+- **The local lane is the *reach* lane, not the fast lane.** Measured from the phone
+  on 2026-09-23 over LAN: 30.1s for a direct reply, against 2.8s from Render. maestro's
+  `PERSONA_MODEL` is `gpt-4.1-nano`, so the Mac makes a network call to OpenAI — there is
+  no Ollama in the path. PLAN.md decision #8 assumed local ≈ 1s; that is not true today,
+  and the lane badge should not be read as a speed indicator. What the Mac actually buys
+  is tool reach.
+- **Even that tool reach is currently broken for dhaba.** maestro's `DHABA_AI_URL` points
+  at `https://dhaba-ai.onrender.com`, so a dhaba question from the *local* lane still
+  goes out to Render — and Render's dhaba-ai cannot reach Bill-App, which runs on the
+  Mac. Point `DHABA_AI_URL` at a local dhaba-ai (`:8001`) with Bill-App on `:5005` before
+  trusting any dhaba answer from the phone.
 - **The Render lane is deliberately degraded.** A dhaba question there would cost ~78s
   (maestro cold start 33.8s + dhaba-ai cold start 43.9s, sequential — measured 2026-09-22).
   It answers "that needs the Mac" instead of hanging. This is a feature, not a TODO.

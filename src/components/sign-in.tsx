@@ -95,7 +95,7 @@ export function SignIn() {
 
           <Meta style={styles.footnote}>
             {lane === 'local'
-              ? 'Connecting to Mac over Tailscale.'
+              ? 'Connecting to the Mac.'
               : 'Mac unreachable; signing into Render Cloud (may take 30s to wake).'}
           </Meta>
         </Animated.View>

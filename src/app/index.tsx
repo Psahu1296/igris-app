@@ -156,7 +156,7 @@ function Empty({
 
       <Answer style={styles.emptyLede}>
         {lane === 'local'
-          ? 'The Mac is connected over Tailscale. All system tools active.'
+          ? 'Connected to the Mac. All system tools active.'
           : 'Operating via Render Cloud. System tools limited, answers may take ~30s.'}
       </Answer>
 

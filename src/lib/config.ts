@@ -1,4 +1,4 @@
-/** Which brain answers: the Mac over Tailscale, or Render. */
+/** Which brain answers: the Mac on the tailnet or LAN, or Render. */
 export type Lane = 'local' | 'cloud';
 
 /**

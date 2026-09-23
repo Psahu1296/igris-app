@@ -2,10 +2,14 @@
  * Igris design tokens.
  *
  * The palette encodes system state rather than decorating it. Igris runs on two
- * lanes (PLAN.md decision #4): the Mac over Tailscale, which is instant, free and
- * has every tool; or Render, which is slow, paid and knows less. Warm tungsten
- * means the Mac answered. Cold steel means Render did. You can see which brain
- * you are talking to before you read a word.
+ * lanes (PLAN.md decision #4): the Mac, reached over the tailnet or the LAN, which
+ * is free and has every tool; or Render, which is paid and knows less. Warm tungsten
+ * means the Mac answered. Cold steel means Render did. You can see which brain you
+ * are talking to before you read a word.
+ *
+ * Note the lane is about *reach*, not speed. Measured from the phone on 2026-09-23 the
+ * Mac took 30.1s, because maestro's PERSONA_MODEL is gpt-4.1-nano — a network call to
+ * OpenAI, not a local Ollama. The Mac lane is not the fast lane until that changes.
  *
  * Ground is a warm-shifted ink, not #000 and not a neutral near-black — Igris is
  * a knight serving a roadside dhaba at night, lit by kerosene, not a spaceship.
