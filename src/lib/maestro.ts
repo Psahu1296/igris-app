@@ -67,6 +67,42 @@ async function tokenFor(lane: Lane): Promise<string> {
   return login(lane, creds.username, creds.password);
 }
 
+/**
+ * Send recorded audio to the Mac and get words back.
+ *
+ * The phone does not transcribe. A 20M on-device recogniser heard "how is the weather
+ * in my city" as "ular in my city", and nothing short of a far bigger model fixes that
+ * — so the Mac's Whisper does it, with the domain prompt that knows "Igris" and
+ * "dhaba". This is cloud-lane-hostile by nature: Render has no Whisper, so callers
+ * must keep it on the local lane.
+ */
+export async function transcribe(lane: Lane, wav: Uint8Array): Promise<string> {
+  const run = (token: string) =>
+    fetch(`${urlFor(lane)}/stt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'audio/wav', Authorization: `Bearer ${token}` },
+      body: wav as unknown as BodyInit,
+    });
+
+  let res = await run(await tokenFor(lane));
+
+  // Same single-session eviction as streamChat: re-login once and retry.
+  if (res.status === 401) {
+    const creds = await secure.loadCredentials();
+    if (!creds) throw new AuthError('Not signed in.');
+    await secure.clearToken(lane);
+    res = await run(await login(lane, creds.username, creds.password));
+  }
+
+  if (res.status === 404) {
+    throw new Error('This Igris has no /stt endpoint. The Mac needs to be running a current maestro.');
+  }
+  if (!res.ok) throw new Error(`Transcription failed (${res.status}).`);
+
+  const body = (await res.json()) as { text?: string };
+  return (body.text ?? '').trim();
+}
+
 /** What the transcript needs to know about a turn in flight. */
 export type TurnEvent =
   | { kind: 'status'; message: string }

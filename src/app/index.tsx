@@ -32,7 +32,7 @@ export default function Transcript() {
   const [busy, setBusy] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
-  const listening = useListening();
+  const listening = useListening(lane);
 
   const ask = useCallback(
     async (message: string) => {
@@ -139,7 +139,6 @@ export default function Transcript() {
           voice={{
             available: listening.available,
             state: listening.state,
-            partial: listening.partial,
             // A finished utterance is asked immediately: the point of talking to
             // Igris is not to fill in a text box you then have to press send on.
             start: () => void listening.start((text) => void ask(text)),

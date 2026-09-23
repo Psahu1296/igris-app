@@ -10,7 +10,6 @@ import type { ListenState } from '@/lib/voice/use-listening';
 export type VoiceControls = {
   available: boolean;
   state: ListenState;
-  partial: string;
   start: () => void;
   stop: () => void;
 };
@@ -28,7 +27,9 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
-  const listening = voice?.state === 'listening' || voice?.state === 'starting';
+  const listening = voice?.state === 'listening';
+  const transcribing = voice?.state === 'transcribing';
+  const micBusy = listening || transcribing;
   const ready = draft.trim().length > 0 && !busy;
   const accent = laneColor(lane);
 
@@ -50,39 +51,37 @@ export function Composer({
           },
         ]}>
         <TextInput
-          // While the mic is open the field mirrors the live transcript, so the
-          // words appear as they are recognised rather than all at once at the end.
-          value={listening ? voice.partial : draft}
+          value={draft}
           onChangeText={setDraft}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder={listening ? 'Listening…' : 'Ask Igris...'}
+          placeholder={listening ? 'Listening…' : transcribing ? 'Transcribing…' : 'Ask Igris...'}
           placeholderTextColor={Palette.faint}
           style={styles.input}
           multiline
           maxLength={2000}
-          editable={!busy && !listening}
+          editable={!busy && !micBusy}
           onSubmitEditing={send}
           returnKeyType="send"
           submitBehavior="submit"
         />
         {voice?.available && !ready ? (
           <Pressable
-            onPress={() => (listening ? voice.stop() : voice.start())}
-            disabled={busy}
+            onPress={() => (micBusy ? voice.stop() : voice.start())}
+            disabled={busy || transcribing}
             accessibilityRole="button"
             accessibilityLabel={listening ? 'Stop listening' : 'Speak to Igris'}
-            accessibilityState={{ busy: listening }}
+            accessibilityState={{ busy: micBusy }}
             style={[
               styles.button,
               styles.mic,
               {
-                backgroundColor: listening ? accent : Palette.surfaceLift,
-                shadowColor: listening ? accent : 'transparent',
+                backgroundColor: micBusy ? accent : Palette.surfaceLift,
+                shadowColor: micBusy ? accent : 'transparent',
               },
             ]}>
-            <Text style={[styles.buttonLabel, { color: listening ? Palette.ground : Palette.muted }]}>
-              {listening ? '■' : '🎙'}
+            <Text style={[styles.buttonLabel, { color: micBusy ? Palette.ground : Palette.muted }]}>
+              {transcribing ? '…' : listening ? '■' : '🎙'}
             </Text>
           </Pressable>
         ) : null}

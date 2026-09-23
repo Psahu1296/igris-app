@@ -1,176 +1,159 @@
 import { createPcmLiveStream } from 'react-native-sherpa-onnx/audio';
-import {
-  createStreamingSTT,
-  type StreamingSttEngine,
-  type SttStream,
-} from 'react-native-sherpa-onnx/stt';
 
-import type { AssetSpec } from '@/lib/assets/manifest';
-import { modelPath, modelState } from '@/lib/voice/model';
+import type { Lane } from '@/lib/config';
+import { transcribe } from '@/lib/maestro';
+import { encodeWav, rms } from '@/lib/voice/wav';
 
 /**
- * Speech-to-text, behind an interface, mirroring tts.ts and maestro/voice/stt.py.
+ * Speech-to-text, done on the Mac.
  *
- * **There is no VAD here, and that is deliberate.** The plan called for
- * silero VAD -> STT, copying maestro/voice/vad.py. That cannot be built on this
- * library: `react-native-sherpa-onnx/vad` is a documented placeholder whose every
- * function throws "Not yet implemented". What we actually needed VAD *for* — knowing
- * when the speaker stopped — is built into the streaming recogniser as endpoint
- * detection, so the pipeline is mic -> streaming STT -> endpoint, one stage shorter.
+ * **The phone does not recognise speech, deliberately.** An on-device streaming
+ * zipformer was tried first and heard "how is the weather in my city right now" as
+ * "ular in my city". That is not a bug to fix: it is a 20M-parameter int8 model on a
+ * phone CPU, against the multi-billion-parameter server models that set the
+ * expectation. Rather than ship 100–300MB of model for a worse result, the phone
+ * records and the Mac's Whisper transcribes — the same engine and the same domain
+ * prompt the desk voice loop already uses, so "Igris" and "dhaba" stay words.
  *
- * Note the model must be an ONLINE type (transducer, paraformer, zipformer2_ctc,
- * nemo_ctc, tone_ctc). Whisper is offline-only and cannot stream, so it is not an
- * option no matter how familiar it is from the Python side.
+ * What the phone still owns is knowing when you stopped talking. That was the only
+ * job the on-device model was doing that mattered, and RMS over the captured chunks
+ * does it without a model at all.
  */
 
 export interface Listener {
   readonly provider: string;
-  /** Begin capturing. Resolves once the mic is live, not when speech ends. */
   start(handlers: ListenHandlers): Promise<void>;
-  /** Stop capturing and finalise. Safe to call when not listening. */
   stop(): Promise<void>;
 }
 
 export type ListenHandlers = {
-  /** Fires repeatedly as the transcript grows. Use for live captions. */
-  onPartial?: (text: string) => void;
-  /** Fires once, with the settled transcript. Empty string means nothing was said. */
+  /** Fires when capture ends and upload begins — there are no live partials. */
+  onTranscribing?: () => void;
+  /** Fires once with the transcript. Empty means nothing was said. */
   onFinal: (text: string) => void;
   onError?: (error: Error) => void;
 };
 
-export type ListeningStatus =
-  | { ready: true }
-  | { ready: false; reason: string; fixable: 'download' | 'extract' | 'none' };
+/** Loud enough to be speech rather than room tone. Tuned on a OnePlus 11R. */
+const SPEECH_RMS = 0.015;
+/** Silence after speech that ends the utterance. Matches sherpa's old rule1. */
+const TRAILING_SILENCE_MS = 1500;
+/** Give up waiting for a first word rather than upload a recording of a room. */
+const NO_SPEECH_TIMEOUT_MS = 6000;
+/** Hard cap, so a pocket-dial cannot upload forever. */
+const MAX_UTTERANCE_MS = 30_000;
 
-export function listeningStatus(ears: AssetSpec | undefined): ListeningStatus {
-  if (!ears) {
-    return { ready: false, reason: 'No speech model is listed in the asset manifest.', fixable: 'none' };
-  }
-  switch (modelState(ears)) {
-    case 'ready':
-      return { ready: true };
-    case 'archived':
-      return { ready: false, reason: 'The speech model is downloaded but not unpacked yet.', fixable: 'extract' };
-    default:
-      return { ready: false, reason: 'Download the speech model to talk to Igris.', fixable: 'download' };
-  }
-}
-
-class SherpaListener implements Listener {
-  readonly provider = 'sherpa-onnx · streaming zipformer';
-  private stream: SttStream | null = null;
+class RemoteListener implements Listener {
+  readonly provider = 'maestro /stt · whisper on the Mac';
   private mic: ReturnType<typeof createPcmLiveStream> | null = null;
   private unsubscribes: (() => void)[] = [];
+  private chunks: Float32Array[] = [];
+  private sampleRate = 16_000;
   private settled = false;
-  private latest = '';
+  private heardSpeech = false;
+  private lastVoiceAt = 0;
+  private startedAt = 0;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly engine: StreamingSttEngine) {}
+  constructor(private readonly lane: Lane) {}
 
   async start(handlers: ListenHandlers): Promise<void> {
     await this.stop();
+    this.chunks = [];
     this.settled = false;
-    this.latest = '';
+    this.heardSpeech = false;
+    this.startedAt = Date.now();
+    this.lastVoiceAt = 0;
 
-    const stream = await this.engine.createStream();
-    this.stream = stream;
-
-    // 16 kHz because that is what every sherpa ASR model expects; the native side
-    // resamples for us, so we never have to touch the device's real capture rate.
     const mic = createPcmLiveStream({ sampleRate: 16_000, channelCount: 1 });
     this.mic = mic;
 
-    const finish = (text: string) => {
-      if (this.settled) return;
-      this.settled = true;
-      handlers.onFinal(text);
-      void this.stop();
-    };
-
     this.unsubscribes.push(
       mic.onData((samples, sampleRate) => {
-        if (this.settled || this.stream !== stream) return;
-        // processAudioChunk is feed + decode + read in one bridge call. Doing it by
-        // hand costs five crossings per chunk, and chunks arrive many times a second.
-        void stream
-          .processAudioChunk(samples, sampleRate)
-          .then(({ result, isEndpoint }) => {
-            if (this.settled || this.stream !== stream) return;
-            if (result.text && result.text !== this.latest) {
-              this.latest = result.text;
-              handlers.onPartial?.(result.text);
-            }
-            // The recogniser decides the utterance ended — this is what replaces VAD.
-            if (isEndpoint) finish(this.latest);
-          })
-          .catch((err: unknown) => {
-            handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
-            finish(this.latest);
-          });
+        if (this.settled) return;
+        this.sampleRate = sampleRate;
+        // Copy: the native side may reuse its buffer for the next chunk, and we are
+        // keeping these until the end of the utterance.
+        this.chunks.push(new Float32Array(samples));
+        if (rms(samples) >= SPEECH_RMS) {
+          this.heardSpeech = true;
+          this.lastVoiceAt = Date.now();
+        }
       })
     );
 
     this.unsubscribes.push(
-      mic.onError((message) => {
-        handlers.onError?.(new Error(message));
-        finish(this.latest);
-      })
+      mic.onError((message) => this.finish(handlers, new Error(message)))
     );
+
+    // Endpointing lives on a timer rather than in onData, so a speaker who goes
+    // completely silent — no chunks at all — is still cut off on schedule.
+    this.timer = setInterval(() => {
+      if (this.settled) return;
+      const now = Date.now();
+      const elapsed = now - this.startedAt;
+
+      if (this.heardSpeech && now - this.lastVoiceAt >= TRAILING_SILENCE_MS) {
+        void this.finish(handlers);
+      } else if (!this.heardSpeech && elapsed >= NO_SPEECH_TIMEOUT_MS) {
+        void this.finish(handlers);
+      } else if (elapsed >= MAX_UTTERANCE_MS) {
+        void this.finish(handlers);
+      }
+    }, 250);
 
     await mic.start();
   }
 
-  /**
-   * Releasing in order matters: stop the microphone first so no further chunks are
-   * handed to a stream we are about to free, then release the stream. The reverse
-   * order hands audio to a dead native pointer.
-   */
-  async stop(): Promise<void> {
-    for (const off of this.unsubscribes.splice(0)) off();
+  private async finish(handlers: ListenHandlers, error?: Error): Promise<void> {
+    if (this.settled) return;
+    this.settled = true;
 
-    const mic = this.mic;
-    this.mic = null;
-    if (mic) await mic.stop().catch(() => {});
+    const chunks = this.chunks;
+    const heardSpeech = this.heardSpeech;
+    const sampleRate = this.sampleRate;
+    this.chunks = [];
+    await this.stop();
 
-    const stream = this.stream;
-    this.stream = null;
-    if (stream) {
-      await stream.inputFinished().catch(() => {});
-      await stream.release().catch(() => {});
+    if (error) {
+      handlers.onError?.(error);
+      handlers.onFinal('');
+      return;
+    }
+    // Nothing above room tone: uploading would cost a round trip to be told so.
+    if (!heardSpeech) {
+      handlers.onFinal('');
+      return;
+    }
+
+    handlers.onTranscribing?.();
+    try {
+      const total = chunks.reduce((n, c) => n + c.length, 0);
+      const joined = new Float32Array(total);
+      let at = 0;
+      for (const c of chunks) {
+        joined.set(c, at);
+        at += c.length;
+      }
+      handlers.onFinal(await transcribe(this.lane, encodeWav(joined, sampleRate)));
+    } catch (err) {
+      handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
+      handlers.onFinal('');
     }
   }
 
-  destroy() {
-    return this.engine.destroy();
+  async stop(): Promise<void> {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    for (const off of this.unsubscribes.splice(0)) off();
+    const mic = this.mic;
+    this.mic = null;
+    if (mic) await mic.stop().catch(() => {});
   }
 }
 
-// One recogniser per model directory, for the same reason as the speaker: creating
-// it loads the model into native memory, which is far too expensive per utterance.
-let cached: { path: string; listener: SherpaListener } | null = null;
-
-export async function getListener(ears: AssetSpec): Promise<Listener> {
-  const path = modelPath(ears);
-  if (cached?.path === path) return cached.listener;
-
-  await releaseListener();
-
-  const engine = await createStreamingSTT({
-    modelPath: { type: 'file', path },
-    // 'auto' runs the same native detection as detectSttModel and maps it to an
-    // online type, so swapping the model in the manifest needs no code change.
-    modelType: 'auto',
-    enableEndpoint: true,
-  });
-
-  cached = { path, listener: new SherpaListener(engine) };
-  return cached.listener;
-}
-
-export async function releaseListener(): Promise<void> {
-  if (!cached) return;
-  const { listener } = cached;
-  cached = null;
-  await listener.stop().catch(() => {});
-  await listener.destroy().catch(() => {});
+export function getListener(lane: Lane): Listener {
+  return new RemoteListener(lane);
 }

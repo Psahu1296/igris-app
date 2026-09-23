@@ -80,24 +80,30 @@ Consequences, in order of how much they will bite:
   claim to cover TTS+STT+VAD in one dependency is only two thirds true. What VAD was
   needed for — knowing the speaker stopped — is built into the streaming recogniser as
   endpoint detection (rule1 2.4s silence, rule2 1.4s + speech, rule3 20s cap).
-- **The STT model must match the bundled sherpa-onnx vintage, or the app dies.** Picking
-  the newest streaming zipformer (kroko 2025-08) hard-crashed the process with
-  `SIGABRT` / "pthread_mutex_lock called on a destroyed mutex" the instant the mic was
-  tapped. The cause is one warning line above the abort:
-  `online-zipformer-transducer-model.cc:InitEncoder: 'attention_dims' does not exist in
-  the metadata`. Kroko is a **zipformer2** export (its encoder metadata carries
-  `query_head_dims`/`num_heads`), but `modelType: 'auto'` maps it onto the **v1**
-  transducer loader, which requires `attention_dims` and aborts natively rather than
-  returning an error. There is no zipformer2 *transducer* in the library's online type
-  list, so the fix is a v1-era model: we pin
-  `sherpa-onnx-streaming-zipformer-en-20M-2023-02-17-mobile`, whose encoder metadata
-  does contain `attention_dims`. **A native abort cannot be caught from JS**, so the
-  only defence is pinning a verified model — before changing it, extract the archive and
-  check with `strings encoder*.onnx | grep -c attention_dims`.
-- **STT models must be ONLINE types** (transducer, paraformer, zipformer2_ctc,
-  nemo_ctc, tone_ctc). Whisper is offline-only and cannot stream, however familiar it
-  is from the Python side. We use the kroko streaming zipformer transducer: 55MB down,
-  68MB unpacked, `encoder/decoder/joiner.onnx` + `tokens.txt`.
+- **The phone does not recognise speech, and should not try.** Two on-device models were
+  tried and both failed. Kroko (zipformer2) hard-crashed the process with `SIGABRT`
+  because `modelType: 'auto'` maps it onto the v1 transducer loader, which needs
+  `attention_dims` and aborts natively when it is missing — and a native abort cannot be
+  caught from JS. The 20M zipformer loaded, then heard "how is the weather in my city
+  right now" as "ular in my city". That one is capacity, not configuration: 20M
+  parameters at int8 on a phone CPU against the server-class models that set the
+  expectation. **Speech goes to maestro's `/stt`** (added 2026-09-23), which runs
+  faster-whisper with a domain prompt that knows "Igris" and "dhaba". Measured: whisper
+  `small` transcribes in ~1.5s and gets proper nouns right.
+- **So the mic needs the Mac.** Render has no Whisper, so `useListening` offers the mic
+  only on the local lane and says so on Render rather than failing at the end of an
+  utterance.
+- **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
+  on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
+  does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were
+  tuned on a OnePlus 11R — `SPEECH_RMS` is the one to change if it cuts you off or never
+  stops.
+- **If you ever reconsider an on-device recogniser**, the model must be an ONLINE type
+  (transducer, paraformer, zipformer2_ctc, nemo_ctc, tone_ctc) *and* match the sherpa-onnx
+  bundled in the installed package version. Check before trusting a name:
+  `strings encoder*.onnx | grep -c attention_dims`. Also beware mixed precision — the
+  "mobile" archives ship an int8 joiner with no fp32 twin, and detection will happily
+  pair it with an fp32 encoder, which decodes to confident nonsense.
 - **Models are never bundled.** They download on first run from GitHub Releases on this
   repo against `assets/manifest.json` (size + MD5 verified — see Gotchas). ~110–160MB.
 
