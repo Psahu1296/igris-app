@@ -26,5 +26,9 @@ export const urlFor = (lane: Lane) => (lane === 'local' ? LOCAL_URL : CLOUD_URL)
  * decides whether the phone continues the same conversation as the Mac voice loop
  * or starts its own: set it to match MAESTRO_SESSION_ID in maestro's .env to share
  * one continuous Igris across every surface.
+ *
+ * Defaults to 'voice-v2', matching maestro's current MAESTRO_SESSION_ID. Do NOT
+ * use 'voice': that thread was retired on 2026-06-18 because its memory was
+ * poisoned with a hallucinated answer, and maestro would happily resume it.
  */
-export const SESSION_ID = process.env.EXPO_PUBLIC_MAESTRO_SESSION_ID ?? 'voice';
+export const SESSION_ID = process.env.EXPO_PUBLIC_MAESTRO_SESSION_ID ?? 'voice-v2';

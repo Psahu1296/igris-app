@@ -19,8 +19,10 @@ Full plan and the 16 locked decisions: `../.scratch/igris-app/PLAN.md`.
 | Lint | `npx expo lint` | |
 | Doctor | `npx expo-doctor` | dependency/config drift |
 | Add a package | `npx expo install <pkg>` | **never** `npm i` — this resolves SDK-compatible versions |
-| Dev build (cloud) | `npx eas-cli build -p android --profile development` | ~15 min |
+| Dev build (local) | `./gradlew assembleDebug` in `android/` | ~3 min after the first run |
+| Dev build (cloud) | `npx eas-cli build -p android --profile development` | ~15 min build, but the free queue has hit 50+ min |
 | Sideload APK | `npx eas-cli build -p android --profile preview` | this is how the app ships |
+| Install to phone | `adb install -r android/app/build/outputs/apk/debug/app-debug.apk` | `adb` is at `$ANDROID_HOME/platform-tools/adb` |
 | Re-sync native | `npx expo prebuild -p android` | **see "Prebuild is one-way" below** |
 
 There is no test suite yet. Typecheck + lint + a real round trip on the phone is the bar.
@@ -57,11 +59,13 @@ Consequences, in order of how much they will bite:
   `session_id` the client sends, verbatim**. So `EXPO_PUBLIC_MAESTRO_SESSION_ID` decides
   whether the phone continues the Mac voice loop's conversation or starts its own — it
   must match `MAESTRO_SESSION_ID` in `maestro/.env` to share one continuous Igris.
+  That value is **`voice-v2`**, not `voice`: the `voice` thread was retired on 2026-06-18
+  with poisoned memory, and maestro will resume it without complaint if you ask it to.
 - **Voice is all on-device** via `react-native-sherpa-onnx`: silero VAD → sherpa STT →
   (network) → Piper `en_GB-alan-medium` TTS. Same pipeline shape as `maestro/voice/`
   (`vad.py` → `stt.py` → `brain.py` → `tts.py`), so read those when in doubt about ordering.
 - **Models are never bundled.** They download on first run from GitHub Releases on this
-  repo against `assets/manifest.json` (sha256-verified, resumable). ~110–160MB.
+  repo against `assets/manifest.json` (size + MD5 verified — see Gotchas). ~110–160MB.
 
 ## The speech engine — installed
 `src/lib/voice/tts.ts` defines the `Tts` interface and owns the only reference to a
@@ -108,9 +112,16 @@ Things that were **not** obvious and cost real time:
   them is what `--clean` would do, and it is never what you want.
 
 ## Gotchas
-- **No JDK and no Android SDK are installed on this machine** (checked 2026-09-22). Local
-  builds are impossible until JDK 17 + cmdline-tools are installed; until then every
-  native change is a ~15 min EAS cloud build. Install them before starting Phase 4.
+- **Local builds need these two exports** (installed 2026-09-23 via Homebrew; the JDK is
+  keg-only so it is deliberately *not* on PATH):
+  ```sh
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+  export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+  export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+  ```
+  `android/local.properties` points Gradle at that SDK and is gitignored, so every
+  machine sets its own. Versions are pinned by the project, not chosen: compileSdk 36,
+  NDK 27.1.12297006, CMake 3.30.5, Gradle 9.3.1, JDK 17.
 - The "Local" lane is silently dead when the Mac is asleep. Health-probe every turn and
   fall back, never hang.
 - Porcupine needs a Picovoice AccessKey at runtime. It is a secret: `.env`, not the repo.
@@ -121,6 +132,23 @@ Things that were **not** obvious and cost real time:
   storage pressure, and losing the 63MB voice looks like Igris going mute for no reason.
 - maestro's `/chat/stream` is **SSE** (`EventSourceResponse`). RN's `fetch` has no
   native SSE support — use an SSE client library or XHR streaming, not `EventSource`.
+- **SSE frames from maestro are CRLF-delimited.** sse-starlette's `ServerSentEvent`
+  defaults to `DEFAULT_SEPARATOR = "\r\n"` and maestro never passes `sep`, so frames
+  end `\r\n\r\n`. That contains no two adjacent `\n`, so a parser scanning for
+  `\n\n` silently yields zero frames and every turn dies as "Igris closed the
+  connection without answering". `src/lib/sse.ts` normalises CRLF/CR/LF and holds back
+  a chunk-trailing `\r` so a chunk that ends between CR and LF cannot invent a blank
+  line. If you touch that parser, re-check those two cases by hand — a whole-stream
+  test passes even when both are broken.
+- **`KeyboardAvoidingView` does nothing on this app.** SDK 57 enables edge-to-edge by
+  default, which makes the manifest's `adjustResize` a no-op on Android 15+, so the
+  window never resizes and there is nothing for it to react to — verified on a OnePlus
+  11R (Android 16), composer sat under the IME with the send button untappable. Expo's
+  keyboard guide ("on Android just mounting it is enough") assumes adjustResize is live
+  and is wrong here. `src/lib/use-keyboard-inset.ts` reads RN's `keyboardDidShow`
+  height instead, which *does* fire under edge-to-edge. Reanimated's
+  `useAnimatedKeyboard` is the other no-dependency option but is deprecated and seizes
+  inset management app-wide, which fights safe-area-context.
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba
   path is maestro → `DHABA_AI_URL/agent/chat` → dhaba-ai → Bill-App.
 

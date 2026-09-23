@@ -14,18 +14,31 @@
 import type { Lane } from '@/lib/config';
 
 export const Palette = {
-  ground: '#141118',
-  surface: '#1E1922',
-  surfaceLift: '#272130',
-  hairline: '#2E2833',
+  ground: '#09080E',
+  surface: '#14121E',
+  surfaceLift: '#1C182A',
+  surfaceGlass: 'rgba(255, 255, 255, 0.04)',
+  surfaceGlassHover: 'rgba(255, 255, 255, 0.08)',
+  hairline: 'rgba(255, 255, 255, 0.09)',
+  hairlineBright: 'rgba(255, 255, 255, 0.16)',
 
-  text: '#EDE7DC',
-  muted: '#8A8178',
-  faint: '#5A5450',
+  text: '#F5F2EC',
+  muted: '#A29990',
+  faint: '#635B54',
 
-  local: '#E8A33D',
-  cloud: '#6E8CA8',
-  alert: '#C7623F',
+  local: '#FFB338',
+  localGlow: 'rgba(255, 179, 56, 0.25)',
+  localSoft: 'rgba(255, 179, 56, 0.12)',
+
+  cloud: '#38BDF8',
+  cloudGlow: 'rgba(56, 189, 248, 0.25)',
+  cloudSoft: 'rgba(56, 189, 248, 0.12)',
+
+  thinking: '#A855F7',
+  thinkingGlow: 'rgba(168, 85, 247, 0.3)',
+
+  alert: '#FF5555',
+  alertGlow: 'rgba(255, 85, 85, 0.25)',
 } as const;
 
 export type { Lane };
