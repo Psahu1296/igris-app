@@ -67,7 +67,7 @@ Consequences, in order of how much they will bite:
 - **Models are never bundled.** They download on first run from GitHub Releases on this
   repo against `assets/manifest.json` (size + MD5 verified — see Gotchas). ~110–160MB.
 
-## The speech engine — installed
+## The speech engine — verified on device
 `src/lib/voice/tts.ts` defines the `Tts` interface and owns the only reference to a
 concrete engine, mirroring `maestro/voice/factory.py`. Engine:
 **`react-native-sherpa-onnx`** (XDcobra, MIT) — chosen because it covers TTS, STT and
@@ -91,6 +91,16 @@ Things that were **not** obvious and cost real time:
   `writePcmChunk`) and plays while generating. That is also the low-latency path.
 - The archive is deleted after extraction; readiness is the unpacked directory, never
   the archive. Keeping both costs 146MB for no benefit.
+
+**Proven on a OnePlus 11R (Android 16) on 2026-09-23**, end to end from a cold install:
+manifest fetch → 64MB download → MD5 check → `extractArchive` → `createStreamingTTS` →
+audible speech. The unpacked directory is 80.6MB at
+`files/models/vits-piper-en_GB-alan-medium/` and carries `en_GB-alan-medium.onnx`,
+`tokens.txt` and `espeak-ng-data/`; the archive is gone, as designed. Playback evidence,
+if you ever need to re-check it without ears: logcat shows an AudioTrack at
+`sampleRate:22050` (Piper's native rate) on `streamType:3` under the app's own pid,
+`stop() called with 35700 frames delivered` — 1.62s of audio — created, played and
+released with no underruns. Download to speech took under 20s on 5G.
 
 **Expo Go no longer runs this app** — a TurboModule is not in the Expo Go binary. Use
 `eas build --profile development` and run Metro against the dev client.
