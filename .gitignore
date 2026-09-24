@@ -45,3 +45,7 @@ example
 # hand-edit the Kotlin (VoiceInteractionService, wake foreground service), so the
 # native project is source, not build output. See CLAUDE.md "Prebuild is one-way".
 /ios
+
+# Gradle output of local Expo modules (android/.gitignore covers only android/)
+/modules/*/android/build/
+/modules/*/android/.gradle/

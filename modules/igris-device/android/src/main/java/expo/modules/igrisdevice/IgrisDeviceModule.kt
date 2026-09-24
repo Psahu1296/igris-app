@@ -1,13 +1,24 @@
 package expo.modules.igrisdevice
 
 import android.Manifest
+import android.app.Notification
+import android.app.RemoteInput
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.provider.AlarmClock
+import android.provider.Settings
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import android.provider.ContactsContract.CommonDataKinds.Phone
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -18,6 +29,12 @@ class NoHandlerException(what: String) :
 
 class NoPermissionException(what: String) :
   CodedException("ERR_NO_PERMISSION", "Igris does not have permission to $what.", null)
+
+class NoNotificationAccessException :
+  CodedException("ERR_NO_NOTIFICATION_ACCESS", "Igris does not have notification access.", null)
+
+class NotificationGoneException :
+  CodedException("ERR_NOTIFICATION_GONE", "That notification is no longer showing.", null)
 
 /** Enough candidates to pick from on one card; more is a search result, not a choice. */
 private const val MAX_MATCHES = 12
@@ -30,8 +47,26 @@ private const val MAX_MATCHES = 12
  * with getIntExtra — so the hour silently arrives as 0. Here the types are exact.
  */
 class IgrisDeviceModule : Module() {
+  private var hindi: HindiVoice? = null
+
   override fun definition() = ModuleDefinition {
     Name("IgrisDevice")
+
+    OnDestroy {
+      hindi?.shutdown()
+    }
+
+    // ── Hindi speech (HindiVoice.kt) ─────────────────────────────────────────────
+    // Resolves when the sentence finishes OR is stopped; rejects if it cannot speak.
+    AsyncFunction("speakHindi") { text: String, promise: Promise ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val voice = hindi ?: HindiVoice(context.applicationContext).also { hindi = it }
+      voice.speak(text, promise)
+    }
+
+    Function("stopHindi") {
+      hindi?.stop()
+    }
 
     // SKIP_UI: the clock sets it without showing its own screen, so Igris stays in
     // front. Measured on ColorOS: honoured.
@@ -87,6 +122,104 @@ class IgrisDeviceModule : Module() {
     Function("dial") { number: String ->
       start(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)), "open the dialer")
     }
+
+    // ── Notifications (IgrisNotificationListener) ──────────────────────────────
+    // Everything below runs on the phone and returns to JS on the phone. Which apps
+    // are read, and how, is decided in src/lib/notifications.ts.
+
+    Function("hasNotificationAccess") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    }
+
+    // Straight to Igris's own switch where the OS supports it (Android 11+), else the list.
+    Function("openNotificationAccess") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val component = ComponentName(context, IgrisNotificationListener::class.java)
+      val detail = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && try {
+        start(
+          Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString()),
+          "open notification settings",
+        )
+        true
+      } catch (e: NoHandlerException) {
+        false // ColorOS may not route the detail page; the list always exists.
+      }
+      if (!detail) start(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), "open notification settings")
+    }
+
+    // What is in the shade now. Group summaries ("5 messages from 2 chats") are skipped:
+    // each chat also has its own notification, and reading both says everything twice.
+    AsyncFunction("getNotifications") {
+      listener().activeNotifications.orEmpty()
+        .filter { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
+        .map { describe(it) }
+    }
+
+    // Answers through the notification's own reply box (RemoteInput) — the same thing
+    // typing into the shade does, so the message leaves from the user's own account.
+    AsyncFunction("reply") { key: String, text: String ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val action = find(key).notification.actions
+        ?.firstOrNull { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true }
+        ?: throw NoHandlerException("reply to that notification")
+      val inputs = action.remoteInputs
+      val results = Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, text) } }
+      val fill = Intent()
+      RemoteInput.addResultsToIntent(inputs, fill, results)
+      action.actionIntent.send(context, 0, fill)
+    }
+
+    // Presses one of a notification's buttons — how a ringing alarm is dismissed,
+    // since ColorOS ignores DISMISS_ALARM.
+    AsyncFunction("pressAction") { key: String, index: Int ->
+      val action = find(key).notification.actions?.getOrNull(index)
+        ?: throw NotificationGoneException()
+      action.actionIntent.send()
+    }
+  }
+
+  private fun listener(): NotificationListenerService {
+    val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+    if (!NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)) {
+      throw NoNotificationAccessException()
+    }
+    return IgrisNotificationListener.instance ?: run {
+      // Access is on but Android has not bound the service yet (or dropped it).
+      NotificationListenerService.requestRebind(ComponentName(context, IgrisNotificationListener::class.java))
+      throw CodedException("ERR_LISTENER_STARTING", "Notification access is still connecting. Ask again in a moment.", null)
+    }
+  }
+
+  private fun find(key: String): StatusBarNotification =
+    listener().activeNotifications.orEmpty().firstOrNull { it.key == key } ?: throw NotificationGoneException()
+
+  private fun describe(sbn: StatusBarNotification): Map<String, Any?> {
+    val n = sbn.notification
+    val extras = n.extras
+    val title = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+      ?: extras.getCharSequence(Notification.EXTRA_TITLE)
+    // Chat apps put the whole unread conversation here; the plain text is only the last line.
+    val messages = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
+      ?.messages.orEmpty()
+      .takeLast(5)
+      .mapNotNull { m -> m.text?.let { mapOf("sender" to m.person?.name?.toString(), "text" to it.toString()) } }
+    return mapOf(
+      "key" to sbn.key,
+      "packageName" to sbn.packageName,
+      "title" to title?.toString(),
+      "text" to extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+      "messages" to messages,
+      "postedAt" to sbn.postTime.toDouble(),
+      "category" to n.category,
+      "ongoing" to sbn.isOngoing,
+      // A RINGING alarm takes over the screen; an "upcoming alarm" notice does not —
+      // and pressing the upcoming one's Dismiss would skip tomorrow's alarm.
+      "fullScreen" to (n.fullScreenIntent != null),
+      "canReply" to (n.actions?.any { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true } == true),
+      "actions" to n.actions.orEmpty().map { it.title?.toString() ?: "" },
+    )
   }
 
   private fun requirePermission(permission: String, what: String) {

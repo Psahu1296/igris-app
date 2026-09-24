@@ -18,9 +18,28 @@
     <intent>
       <action android:name="android.intent.action.SHOW_ALARMS" />
     </intent>
+    <!-- Binding Google TTS for the Hindi voice (HindiVoice.kt). -->
+    <intent>
+      <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
     <intent>
       <action android:name="android.intent.action.DIAL" />
       <data android:scheme="tel" />
     </intent>
   </queries>
+
+  <!-- Reading and answering notifications (and pressing a ringing alarm's Dismiss).
+       No runtime permission exists for this: the user switches Igris on in
+       Settings › Notification access, which the app opens for them. -->
+  <application>
+    <service
+      android:name="expo.modules.igrisdevice.IgrisNotificationListener"
+      android:label="Igris"
+      android:exported="true"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+  </application>
 </manifest>

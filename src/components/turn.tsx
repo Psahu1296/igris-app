@@ -6,7 +6,9 @@ import {
   Check,
   Cloud,
   Copy,
+  MessageSquare,
   Phone,
+  Send,
   Star,
   User,
   Volume2,
@@ -27,7 +29,7 @@ import { IgrisLoader } from '@/components/igris-loader';
 import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
-import { describeAction, type Contact, type DeviceStep } from '@/lib/device';
+import { describeAction, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { isFavourite, toggleFavourite, useFavourites } from '@/lib/favourites';
 import type { Lane, Phase } from '@/lib/maestro';
 import { useSpeakingId, useSpeech } from '@/lib/voice/use-speech';
@@ -51,11 +53,15 @@ export type TurnState = {
 export function Turn({
   turn,
   onCall,
+  onReply,
   onCancelCall,
 }: {
   turn: TurnState;
   /** A candidate on this turn's call card was tapped. */
   onCall?: (turnId: string, contact: Contact) => void;
+  /** A chat on this turn's reply card was tapped. */
+  onReply?: (turnId: string, target: Conversation, text: string) => void;
+  /** Cancel on any pending card — a call, a countdown or a reply. */
   onCancelCall?: (turnId: string) => void;
 }) {
   // A turn is a record of what one brain did, so it keeps that brain's colour — not
@@ -154,6 +160,20 @@ export function Turn({
               onCall={(contact) => onCall?.(turn.id, contact)}
               onCancel={() => onCancelCall?.(turn.id)}
             />
+          ) : turn.device?.action.kind === 'notify.reply' &&
+            turn.device.status === 'confirm' &&
+            turn.device.conversations ? (
+            <ReplyCard
+              text={turn.device.action.text}
+              targets={turn.device.conversations}
+              accent={accent}
+              onSend={(target, text) => onReply?.(turn.id, target, text)}
+              onCancel={() => onCancelCall?.(turn.id)}
+            />
+          ) : turn.device?.action.kind === 'notify.read' &&
+            turn.device.status === 'done' &&
+            turn.device.conversations?.length ? (
+            <MessagesCard conversations={turn.device.conversations} accent={accent} />
           ) : turn.device?.status === 'confirm' && turn.device.candidates ? (
             <CallCard
               candidates={turn.device.candidates}
@@ -228,7 +248,8 @@ export function Turn({
 function DeviceChip({ step, accent }: { step: DeviceStep; accent: string }) {
   const failed = step.status === 'failed';
   const color = failed ? Palette.alert : step.status === 'cancelled' ? Palette.muted : accent;
-  const Icon = step.action.kind === 'call' ? Phone : AlarmClock;
+  const kind = step.action.kind;
+  const Icon = kind === 'call' ? Phone : kind.startsWith('notify') ? MessageSquare : AlarmClock;
   // Once a call is placed the card collapses to the one person actually rung.
   const callee = step.action.kind === 'call' ? step.candidates?.[0] : undefined;
   return (
@@ -386,6 +407,86 @@ function CallCard({
   );
 }
 
+/**
+ * "Send this?" — a dictated reply waits here for a yes, like a call: speech
+ * recognition wrote the text, and a message sent to the wrong chat cannot be unsent.
+ */
+function ReplyCard({
+  text,
+  targets,
+  accent,
+  onSend,
+  onCancel,
+}: {
+  text: string;
+  targets: Conversation[];
+  accent: string;
+  onSend: (target: Conversation, text: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <View style={[styles.callCard, { borderColor: accent + '44', backgroundColor: accent + '0C' }]}>
+      <Meta style={styles.callPrompt}>
+        {targets.length === 1 ? 'Send? Say “yes”, or tap' : 'Which chat?'}
+      </Meta>
+      <Text style={styles.replyText}>{`“${text}”`}</Text>
+      {targets.map((target) => (
+        <View key={target.key} style={styles.callRow}>
+          <View style={styles.callWho}>
+            <Text style={styles.callName} numberOfLines={1}>
+              {target.title}
+            </Text>
+            <Meta style={styles.callNumber} numberOfLines={1}>
+              {`${target.app} · ${target.lines[target.lines.length - 1]?.text ?? ''}`}
+            </Meta>
+          </View>
+          <PressableScale
+            onPress={() => onSend(target, text)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Send to ${target.title} on ${target.app}`}
+            style={[styles.callButton, { backgroundColor: accent }]}>
+            <Send size={16} color={Palette.ground} />
+          </PressableScale>
+        </View>
+      ))}
+      <PressableScale
+        onPress={onCancel}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Cancel reply"
+        style={styles.callCancel}>
+        <X size={13} color={Palette.muted} />
+        <Meta style={styles.actionText}>Cancel</Meta>
+      </PressableScale>
+    </View>
+  );
+}
+
+/** What was read aloud, to glance at instead of listening. Newest chat first. */
+function MessagesCard({ conversations, accent }: { conversations: Conversation[]; accent: string }) {
+  return (
+    <View style={[styles.callCard, { borderColor: accent + '44', backgroundColor: accent + '0C' }]}>
+      {conversations.map((c) => (
+        <View key={c.key} style={styles.chat}>
+          <View style={styles.chatHead}>
+            <MessageSquare size={13} color={accent} />
+            <Text style={styles.chatTitle} numberOfLines={1}>
+              {c.title}
+            </Text>
+            <Meta style={styles.callNumber}>{c.app}</Meta>
+          </View>
+          {c.lines.slice(-3).map((line, i) => (
+            <Meta key={i} style={styles.chatLine} numberOfLines={3}>
+              {line.sender && line.sender !== c.title ? `${line.sender}: ${line.text}` : line.text}
+            </Meta>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   turnContainer: {
     marginBottom: Space.xl,
@@ -529,6 +630,32 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  replyText: {
+    fontFamily: Font.voice,
+    color: Palette.text,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  chat: {
+    gap: 2,
+  },
+  chatHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.xs,
+  },
+  chatTitle: {
+    flexShrink: 1,
+    fontFamily: Font.voiceMedium,
+    color: Palette.text,
+    fontSize: 14,
+  },
+  chatLine: {
+    color: Palette.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingLeft: 13 + Space.xs,
   },
   countdownTrack: {
     height: 3,

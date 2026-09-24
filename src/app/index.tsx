@@ -33,10 +33,12 @@ import {
   findCallee,
   performDeviceAction,
   type Contact,
+  type Conversation,
   type DeviceStep,
 } from '@/lib/device';
 import { COUNTDOWN_MS, matchFavourite, useFavourites, type Favourite } from '@/lib/favourites';
 import { AuthError, streamChat } from '@/lib/maestro';
+import { readMessages, replyTargets, sendReply, speakable, stopAlarm } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
 import { formatTranscript } from '@/lib/transcript';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
@@ -51,8 +53,8 @@ const OPENERS = [
   { icon: CloudSun, text: 'weather in indore' },
 ];
 
-/** Answers to a pending call card, typed or spoken. Whole-message matches only. */
-const YES = /^(yes|yeah|yep|haan|han|ha|ok|okay|sure|go ahead|do it|call|call (him|her|them))[.!]*$/i;
+/** Answers to a pending call or reply card, typed or spoken. Whole-message matches only. */
+const YES = /^(yes|yeah|yep|haan|han|ha|ok|okay|sure|go ahead|do it|call|call (him|her|them)|send|send it)[.!]*$/i;
 const NO = /^(no|nope|nahi|na|cancel|don'?t|stop)[.!]*$/i;
 
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -185,6 +187,21 @@ export default function Transcript() {
     [patchDevice, speech, clearCallTimer]
   );
 
+  // A dictated reply goes out only from here: a tap on the reply card, or "yes" to a
+  // card with a single chat. Like a call, maestro can draft it but never send it.
+  const confirmReply = useCallback(
+    async (turnId: string, target: Conversation, text: string) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      patchDevice(turnId, { status: 'running', detail: null, conversations: [target] });
+      try {
+        patchDevice(turnId, { status: 'done', detail: await sendReply(target, text) });
+      } catch (err) {
+        patchDevice(turnId, { status: 'failed', detail: reason(err) });
+      }
+    },
+    [patchDevice]
+  );
+
   const cancelCall = useCallback(
     (turnId: string) => {
       clearCallTimer(turnId);
@@ -241,8 +258,13 @@ export default function Transcript() {
       const pending = [...turns]
         .reverse()
         .find((t) => t.device?.status === 'confirm' || t.device?.status === 'countdown');
-      const only = pending?.device?.candidates?.length === 1 ? pending.device.candidates[0] : null;
-      if (pending && only && YES.test(message.trim())) return void confirmCall(pending.id, only);
+      const step = pending?.device;
+      if (pending && step && YES.test(message.trim())) {
+        if (step.action.kind === 'notify.reply' && step.conversations?.length === 1) {
+          return void confirmReply(pending.id, step.conversations[0], step.action.text);
+        }
+        if (step.candidates?.length === 1) return void confirmCall(pending.id, step.candidates[0]);
+      }
       if (pending && NO.test(message.trim())) return cancelCall(pending.id);
 
       // Auto on Render may be stale: one probe that caught the Mac mid-restart kept the
@@ -276,6 +298,9 @@ export default function Transcript() {
 
       try {
         let answered = false;
+        // Set when the phone itself will speak this turn (reading messages aloud),
+        // so maestro's "checking your messages" does not talk over it.
+        let phoneSpeaks = false;
         await streamChat({
           lane: turnLane,
           message,
@@ -289,7 +314,7 @@ export default function Transcript() {
                 phase: null,
                 elapsedMs: Date.now() - startedAt,
               });
-              void speech.speak(event.message, id);
+              if (!phoneSpeaks) void speech.speak(event.message, id);
             } else if (event.kind === 'device') {
               // Perform it now, not after the answer: the words arrive next and
               // describe it, so the phone should already be acting.
@@ -316,6 +341,41 @@ export default function Transcript() {
                     const candidates = await findCallee(action);
                     patch({ device: { action, status: 'confirm', detail: null, candidates } });
                   })
+                  .catch((err: unknown) =>
+                    patch({ device: { action, status: 'failed', detail: reason(err) } })
+                  );
+              } else if (action.kind === 'notify.read') {
+                // Read and spoken here, on the phone — the messages never reach maestro.
+                phoneSpeaks = true;
+                readMessages(action.from)
+                  .then((conversations) => {
+                    const count = conversations.length;
+                    patch({
+                      device: {
+                        action,
+                        status: 'done',
+                        detail: count === 0 ? 'Nothing new' : `${count} chat${count === 1 ? '' : 's'}`,
+                        conversations,
+                      },
+                    });
+                    void speech.speak(speakable(conversations, action.from), id);
+                  })
+                  .catch((err: unknown) => {
+                    patch({ device: { action, status: 'failed', detail: reason(err) } });
+                    void speech.speak(reason(err), id);
+                  });
+              } else if (action.kind === 'notify.reply') {
+                // Stops at the reply card, like a call — nothing is sent on maestro's word.
+                replyTargets(action.to)
+                  .then((conversations) =>
+                    patch({ device: { action, status: 'confirm', detail: null, conversations } })
+                  )
+                  .catch((err: unknown) =>
+                    patch({ device: { action, status: 'failed', detail: reason(err) } })
+                  );
+              } else if (action.kind === 'alarm.stop') {
+                stopAlarm(action.snooze)
+                  .then((detail) => patch({ device: { action, status: 'done', detail } }))
                   .catch((err: unknown) =>
                     patch({ device: { action, status: 'failed', detail: reason(err) } })
                   );
@@ -349,7 +409,7 @@ export default function Transcript() {
         setBusy(false);
       }
     },
-    [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, cancelCall, startCountdown]
+    [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, confirmReply, cancelCall, startCountdown]
   );
 
   return (
@@ -444,7 +504,13 @@ export default function Transcript() {
             />
           ) : (
             turns.map((turn) => (
-              <Turn key={turn.id} turn={turn} onCall={confirmCall} onCancelCall={cancelCall} />
+              <Turn
+                key={turn.id}
+                turn={turn}
+                onCall={confirmCall}
+                onReply={confirmReply}
+                onCancelCall={cancelCall}
+              />
             ))
           )}
         </ScrollView>

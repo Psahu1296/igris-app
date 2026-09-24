@@ -16,15 +16,31 @@ import IgrisDevice, { type NativeContact } from '../../modules/igris-device';
  */
 
 /** Sent with every /chat/stream request, so maestro only plans what this app can do. */
-export const DEVICE_CAPABILITIES = ['alarm', 'call'];
+export const DEVICE_CAPABILITIES = ['alarm', 'call', 'notify'];
 
 export type DeviceAction =
   | { kind: 'alarm.set'; hour: number; minute: number; label: string | null }
   | { kind: 'alarm.list' }
+  /** Press a RINGING alarm's Snooze or Dismiss (lib/notifications.ts). */
+  | { kind: 'alarm.stop'; snooze: boolean }
+  /** Read what is in the shade aloud — on the phone; maestro never sees it. */
+  | { kind: 'notify.read'; from: string | null }
+  /** `to` null = the most recent conversation. Always confirmed before sending. */
+  | { kind: 'notify.reply'; to: string | null; text: string }
   /** maestro sends a name OR a number; the phone resolves names in its own contacts. */
   | { kind: 'call'; name: string | null; number: string | null };
 
 export type Contact = NativeContact;
+
+/** A chat notification, flattened for display and speech (lib/notifications.ts). */
+export type Conversation = {
+  key: string;
+  app: string;
+  title: string;
+  lines: { sender: string | null; text: string }[];
+  postedAt: number;
+  canReply: boolean;
+};
 
 /**
  * What the transcript shows under the answer: the action and whether it happened.
@@ -39,6 +55,11 @@ export type DeviceStep = {
   candidates?: Contact[];
   /** 'countdown' only: when a favourite is rung unless cancelled (lib/favourites.ts). */
   deadline?: number;
+  /**
+   * notify.read: what was read out. notify.reply: who it could go to — the card
+   * waits at 'confirm' like a call. Held in memory only; never sent or saved.
+   */
+  conversations?: Conversation[];
 };
 
 /**
@@ -49,6 +70,14 @@ export function parseDeviceAction(raw: unknown): DeviceAction | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const a = raw as Record<string, unknown>;
   if (a.kind === 'alarm.list') return { kind: 'alarm.list' };
+  const text = (v: unknown, max: number) =>
+    typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
+  if (a.kind === 'alarm.stop') return { kind: 'alarm.stop', snooze: a.snooze === true };
+  if (a.kind === 'notify.read') return { kind: 'notify.read', from: text(a.from, 60) };
+  if (a.kind === 'notify.reply') {
+    const body = text(a.text, 500);
+    return body ? { kind: 'notify.reply', to: text(a.to, 60), text: body } : null;
+  }
   if (a.kind === 'call') {
     const name = typeof a.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 60) : null;
     const number =
@@ -86,6 +115,12 @@ export function describeAction(action: DeviceAction): string {
       return `Alarm · ${clockLabel(action.hour, action.minute)}${action.label ? ` · ${action.label}` : ''}`;
     case 'alarm.list':
       return 'Opened your alarms';
+    case 'alarm.stop':
+      return action.snooze ? 'Snooze alarm' : 'Stop alarm';
+    case 'notify.read':
+      return action.from ? `Messages · ${action.from}` : 'Messages';
+    case 'notify.reply':
+      return `Reply · ${action.to ?? 'latest'}`;
     case 'call':
       return `Call · ${action.name ?? action.number}`;
   }
@@ -97,7 +132,7 @@ export function describeAction(action: DeviceAction): string {
  * not Linking.sendIntent.
  */
 export async function performDeviceAction(
-  action: Exclude<DeviceAction, { kind: 'call' }>
+  action: Extract<DeviceAction, { kind: 'alarm.set' | 'alarm.list' }>
 ): Promise<string> {
   if (Platform.OS !== 'android') throw new Error('Only the Android app can do this.');
   if (!IgrisDevice) throw new Error('This build has no device module. Rebuild the app.');
@@ -136,12 +171,13 @@ export const lastDigits = (n: string) => n.replace(/\D/g, '').slice(-10);
  * Surrogate-pair ranges without the `u` flag, not \p{Extended_Pictographic}: they
  * work on every engine, so Hermes support for Unicode regex never matters here.
  */
-export const spokenName = (name: string) =>
-  name
+export const withoutEmoji = (text: string) =>
+  text
     .replace(/\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDC00-\uDEFF]|[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+    .trim();
+
+export const spokenName = (name: string) => withoutEmoji(name).toLowerCase();
 
 /** Exact name first, then name-starts-with, then word-starts-with; favourites win ties. */
 function rank(queries: string[], found: Contact[]): Contact[] {

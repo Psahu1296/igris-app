@@ -1,7 +1,11 @@
 import { createStreamingTTS, type StreamingTtsEngine } from 'react-native-sherpa-onnx/tts';
 
 import type { AssetSpec } from '@/lib/assets/manifest';
+import { toDevanagari } from '@/lib/voice/hinglish';
+import { segments } from '@/lib/voice/language';
 import { modelPath, modelState } from '@/lib/voice/model';
+import { spellOut } from '@/lib/voice/shorthand';
+import { speakHindi, stopHindi } from '@/lib/voice/system-tts';
 
 /**
  * Text-to-speech, behind an interface.
@@ -87,9 +91,54 @@ class SherpaTts implements Tts {
   }
 }
 
+/**
+ * Alan for English, the phone's Hindi voice for Hindi and Hinglish sentences
+ * (language.ts decides). One utterance can switch voices at sentence boundaries —
+ * audible, but a mispronounced Hindi sentence is worse than a change of voice.
+ *
+ * Offline-only by construction: the Hindi voice must be a "-local" one, so a message
+ * read aloud from the notification shade never goes to Google's servers. Without
+ * one, Alan says the sentence as best he can.
+ */
+class MixedTts implements Tts {
+  readonly provider = 'piper en_GB-alan + system hi-IN';
+  // Bumped by every stop() and speak(): a sentence loop that sees a newer generation
+  // stops, so interrupting a mixed utterance does not let its next sentence start.
+  private generation = 0;
+
+  constructor(private readonly english: SherpaTts) {}
+
+  async speak(text: string): Promise<void> {
+    await this.stop();
+    const mine = ++this.generation;
+    // Spelled out first ("mtlb" → "matlab"), so the language split sees real words.
+    for (const segment of segments(spellOut(text))) {
+      if (this.generation !== mine) return;
+      if (segment.lang === 'hi') {
+        try {
+          await speakHindi(toDevanagari(segment.text));
+          continue;
+        } catch {
+          if (this.generation !== mine) return;
+        }
+      }
+      await this.english.speak(segment.text);
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.generation++;
+    await Promise.all([this.english.stop(), stopHindi().catch(() => {})]);
+  }
+
+  destroy() {
+    return this.english.destroy();
+  }
+}
+
 // One engine per model directory. Creating a sherpa engine loads ~79MB of model
 // into native memory, so it is built once and reused, not per utterance.
-let cached: { path: string; tts: SherpaTts } | null = null;
+let cached: { path: string; tts: MixedTts } | null = null;
 
 export async function getSpeaker(voice: AssetSpec): Promise<Tts> {
   const path = modelPath(voice);
@@ -103,7 +152,7 @@ export async function getSpeaker(voice: AssetSpec): Promise<Tts> {
   });
   const sampleRate = await engine.getSampleRate();
 
-  cached = { path, tts: new SherpaTts(engine, sampleRate) };
+  cached = { path, tts: new MixedTts(new SherpaTts(engine, sampleRate)) };
   return cached.tts;
 }
 

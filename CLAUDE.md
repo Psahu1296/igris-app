@@ -300,9 +300,29 @@ released with no underruns. Download to speech took under 20s on 5G.
   cancellable countdown — and only when exactly ONE favourite matches the alias, full
   name or first name. Keep both rules: STT mishears names, and a wrong auto-dial is
   the one failure here that embarrasses the user in front of someone else.
-- Device actions need a maestro with `agents/device.py`. Until Render is redeployed,
-  alarms and calls work on the Mac lane only; the old Render maestro ignores
-  `capabilities` and sends "call mom" to the LLM.
+- **Two voices, split per sentence** (`lib/voice/language.ts`, `tts.ts` `MixedTts`).
+  Piper Alan is English-only (Devanagari → silence, romanized Hindi → English letter
+  sounds), so Hindi/Hinglish sentences go to Google TTS's Hindi voice via our own
+  `HindiVoice.kt` — **not expo-speech**, which builds `Locale("hi-IN")` (wrong: falls
+  back to English), crashes on a null voice list, and never rejects in JS, so the
+  speaking loop hung. Only an offline Hindi voice is used, so notification text never reaches
+  Google; without one, Alan reads it. Hinglish is detected by a word list that
+  deliberately excludes words English shares ("to", "do", "main").
+- **Notifications stay on the phone** (`lib/notifications.ts`,
+  `IgrisNotificationListener.kt`). maestro sends only `notify.read` / `notify.reply`;
+  the phone reads the shade, speaks it with on-device TTS, and holds it in the turn's
+  memory — never sent, saved, or put in the copied transcript. Only chat apps in
+  `APPS` are read (no OTPs or bank alerts aloud). Replies stop at a confirm card like
+  calls. Access is a Settings switch, not a runtime permission: the first request opens
+  it and fails with instructions. **Sideloaded builds can't flip that switch**: Android
+  13+ "restricted settings" rejects it with "permission denied", ColorOS hides the
+  "Allow restricted settings" menu, and `appops set` is refused to adb. What works:
+  `adb shell cmd notification allow_listener com.psahu.igris/expo.modules.igrisdevice.IgrisNotificationListener`.
+  Measured 2026-09-24. `alarm.stop` presses a RINGING alarm's button — told
+  from the "upcoming alarm" notice by full-screen + Snooze, because that notice's
+  Dismiss skips the next alarm.
+- Device actions need a maestro with `agents/device.py`; notification actions need the
+  2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba
   path is maestro → `DHABA_AI_URL/agent/chat` → dhaba-ai → Bill-App.
 
