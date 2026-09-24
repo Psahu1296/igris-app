@@ -321,6 +321,27 @@ released with no underruns. Download to speech took under 20s on 5G.
   Measured 2026-09-24. `alarm.stop` presses a RINGING alarm's button — told
   from the "upcoming alarm" notice by full-screen + Snooze, because that notice's
   Dismiss skips the next alarm.
+- **Todos: maestro keeps them, the phone rings** (`lib/todos.ts`, `TodoAlarms.kt`,
+  `TodoAlarmReceiver.kt`, `TodoAlarmActivity.kt`; added 2026-09-24, plan in
+  `maestro/.scratch/igris-tasks/PRD.md`). Render sleeps and there is no push, so the
+  phone pulls `GET /todos/schedule` (a week of firings) and arms native exact alarms —
+  on launch, on every foreground (via the lane re-probe), after a `todos_changed` SSE
+  frame, and after edits on `/todos`. A copy is kept in SharedPreferences so the boot
+  receiver can re-arm. Normal priority = a silent notification; high/must =
+  `setAlarmClock` + a full-screen overlay (native, so it shows over the lock screen in
+  the second it fires) with a looping sound (`FLAG_INSISTENT`) and re-pokes (high once
+  after 30 min, must every 15). Done/Snooze/Start happen natively, usually with the app
+  closed, and wait in a native outbox that the next sync sends first. Start opens
+  `igris://todo?…` (`src/app/todo.tsx`) → a new chat asked the session brief, and
+  counts as a 45-min snooze until the session is reported done. Needs notifications
+  (asked at the first sync with firings), exact alarms and — on Android 14+ — the
+  full-screen switch; `/todos` shows whichever is off. The rules — which slot may be skipped,
+  snooze caps, how long to re-poke, a note, `closes_day` — come on each firing from
+  maestro (`todos._rules`); the Kotlin never decides what a daily must-do is.
+  Start on a session todo sends "Start my session: …" with `todo_session` to a fresh
+  thread, and maestro's tutor runs the session; multiple-choice questions arrive as a
+  `tutor_card` SSE frame and render as tappable options (`turn.tsx` `QuizOptions`) that
+  send the letter as the next message. `/todos` shows weak topics (`lib/tutor.ts`).
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

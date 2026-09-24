@@ -141,7 +141,14 @@ export type TurnEvent =
   | { kind: 'status'; message: string; phase: Phase }
   | { kind: 'answer'; message: string }
   /** Something for the phone to do (lib/device.ts). Arrives just before the answer. */
-  | { kind: 'device'; action: DeviceAction };
+  | { kind: 'device'; action: DeviceAction }
+  /** The turn changed the todo list; the phone re-syncs its alarms (lib/todos.ts). */
+  | { kind: 'todos' }
+  /** A tutor question with options to tap. Arrives just before the answer. */
+  | { kind: 'quiz'; card: QuizCard };
+
+/** A multiple-choice question from the tutor (maestro tutor/session.py): tap to answer. */
+export type QuizCard = { kind: 'mcq'; question: string; options: string[] };
 
 /** Unknown event names fall back to thinking, so a new maestro event can't stall the UI. */
 const phaseOf = (event: string): Phase => (event === 'agent_started' ? 'working' : 'thinking');
@@ -159,10 +166,12 @@ export async function streamChat(opts: {
   message: string;
   /** Which conversation this turn belongs to — maestro uses it as the thread_id. */
   sessionId: string;
+  /** Set when this message starts a todo's tutor session (the alarm's Start). */
+  todoSession?: { todo_id: string; occurrence_at: string | null };
   onEvent: (event: TurnEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, sessionId, onEvent, signal } = opts;
+  const { lane, message, sessionId, todoSession, onEvent, signal } = opts;
 
   const run = async (token: string) => {
     const res = await streamFetch(`${urlFor(lane)}/chat/stream`, {
@@ -176,6 +185,7 @@ export async function streamChat(opts: {
         message,
         session_id: sessionId,
         capabilities: DEVICE_CAPABILITIES,
+        todo_session: todoSession ?? null,
       }),
       signal,
     });
@@ -208,6 +218,21 @@ export async function streamChat(opts: {
 
     for (const frame of parse(decoder.decode(value, { stream: true }))) {
       if (frame.event === 'done') return;
+
+      if (frame.event === 'tutor_card') {
+        try {
+          const card = JSON.parse(frame.data) as QuizCard;
+          if (card.kind === 'mcq' && Array.isArray(card.options)) onEvent({ kind: 'quiz', card });
+        } catch {
+          // malformed: the question is still in the spoken answer
+        }
+        continue;
+      }
+
+      if (frame.event === 'todos_changed') {
+        onEvent({ kind: 'todos' });
+        continue;
+      }
 
       if (frame.event === 'device_action') {
         let action: DeviceAction | null = null;

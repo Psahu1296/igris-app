@@ -9,6 +9,17 @@
   <uses-permission android:name="android.permission.READ_CONTACTS" />
   <uses-permission android:name="android.permission.CALL_PHONE" />
 
+  <!-- Todo alarms (TodoAlarms.kt): exact firing, the lock-screen overlay, the
+       notification itself (Android 13+ asks), and re-arming after a reboot.
+       USE_EXACT_ALARM is granted at install for an alarm-clock-like app; below
+       Android 13 SCHEDULE_EXACT_ALARM does the same job. USE_FULL_SCREEN_INTENT is a
+       switch the user may have to flip on Android 14+ (the Todos screen links to it). -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
   <!-- Android 11+ package visibility: without this, resolving the clock's
        handler can fail even though it is installed. -->
   <queries>
@@ -41,5 +52,27 @@
         <action android:name="android.service.notification.NotificationListenerService" />
       </intent-filter>
     </service>
+
+    <receiver
+      android:name="expo.modules.igrisdevice.TodoAlarmReceiver"
+      android:exported="false" />
+    <receiver
+      android:name="expo.modules.igrisdevice.TodoBootReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+    <!-- Its own task (empty affinity), so dismissing it never surfaces the chat. -->
+    <activity
+      android:name="expo.modules.igrisdevice.TodoAlarmActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTask"
+      android:taskAffinity=""
+      android:showWhenLocked="true"
+      android:turnScreenOn="true"
+      android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
   </application>
 </manifest>

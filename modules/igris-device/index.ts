@@ -34,6 +34,9 @@ export type NativeNotification = {
   actions: string[];
 };
 
+/** A permission the todo alarms need, by what is missing without it. */
+export type TodoAlarmAccess = { notifications: boolean; fullScreen: boolean; exactAlarms: boolean };
+
 type IgrisDeviceModule = {
   setAlarm(hour: number, minute: number, label: string | null): void;
   showAlarms(): void;
@@ -48,6 +51,13 @@ type IgrisDeviceModule = {
   getNotifications(): Promise<NativeNotification[]>;
   reply(key: string, text: string): Promise<void>;
   pressAction(key: string, index: number): Promise<void>;
+  /** Replaces every armed todo alarm with these firings (a JSON array). Returns the count armed. */
+  armTodos(firings: string): number;
+  /** JSON array of what the user did on the overlay or notification, not yet sent to maestro. */
+  todoOutbox(): string;
+  clearTodoOutbox(ids: string[]): void;
+  todoAlarmAccess(): TodoAlarmAccess;
+  openTodoAlarmSettings(which: keyof TodoAlarmAccess): void;
 };
 
 export default requireOptionalNativeModule<IgrisDeviceModule>('IgrisDevice');

@@ -31,7 +31,7 @@ import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
 import { describeAction, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { isFavourite, toggleFavourite, useFavourites } from '@/lib/favourites';
-import type { Lane, Phase } from '@/lib/maestro';
+import type { Lane, Phase, QuizCard } from '@/lib/maestro';
 import { useSpeakingId, useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
@@ -48,6 +48,8 @@ export type TurnState = {
   elapsedMs: number | null;
   /** Something Igris did on this phone during the turn, and whether it worked. */
   device: DeviceStep | null;
+  /** A tutor multiple-choice question asked in this turn. */
+  quiz?: QuizCard | null;
 };
 
 export function Turn({
@@ -55,8 +57,11 @@ export function Turn({
   onCall,
   onReply,
   onCancelCall,
+  onAnswer,
 }: {
   turn: TurnState;
+  /** Tap an option on this turn's quiz card. Only the latest turn gets it. */
+  onAnswer?: (text: string) => void;
   /** A candidate on this turn's call card was tapped. */
   onCall?: (turnId: string, contact: Contact) => void;
   /** A chat on this turn's reply card was tapped. */
@@ -184,6 +189,8 @@ export function Turn({
           ) : turn.device ? (
             <DeviceChip step={turn.device} accent={accent} />
           ) : null}
+
+          {turn.quiz ? <QuizOptions card={turn.quiz} accent={accent} onAnswer={onAnswer} /> : null}
 
           {/* Animated Thinking Row */}
           {!turn.answer && turn.status ? (
@@ -463,6 +470,46 @@ function ReplyCard({
   );
 }
 
+const LETTERS = 'ABCD';
+
+/**
+ * A tutor question's options. Tapping sends the letter as the next message — the same
+ * thing saying "B" does — so maestro grades one way whichever was used. Once answered
+ * (a later turn exists) the options stay visible but stop responding.
+ */
+function QuizOptions({
+  card,
+  accent,
+  onAnswer,
+}: {
+  card: QuizCard;
+  accent: string;
+  onAnswer?: (text: string) => void;
+}) {
+  return (
+    <View style={[styles.callCard, { borderColor: accent + '44', backgroundColor: accent + '0C' }]}>
+      <Meta style={styles.callPrompt}>{onAnswer ? 'Tap your answer, or say the letter' : 'Answered'}</Meta>
+      {card.options.map((option, i) => (
+        <PressableScale
+          key={option}
+          disabled={!onAnswer}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onAnswer?.(LETTERS[i]);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${LETTERS[i]}: ${option}`}
+          style={[styles.quizOption, !onAnswer && styles.quizDone]}>
+          <View style={[styles.quizLetter, { borderColor: accent }]}>
+            <Text style={[styles.quizLetterText, { color: accent }]}>{LETTERS[i]}</Text>
+          </View>
+          <Text style={styles.quizText}>{option}</Text>
+        </PressableScale>
+      ))}
+    </View>
+  );
+}
+
 /** What was read aloud, to glance at instead of listening. Newest chat first. */
 function MessagesCard({ conversations, accent }: { conversations: Conversation[]; accent: string }) {
   return (
@@ -597,6 +644,23 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
+  quizOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+    paddingVertical: Space.sm,
+  },
+  quizDone: { opacity: 0.55 },
+  quizLetter: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quizLetterText: { fontFamily: Font.uiMedium, fontSize: 12 },
+  quizText: { flex: 1, fontFamily: Font.ui, color: Palette.text, fontSize: 14, lineHeight: 20 },
   callCard: {
     borderWidth: 1,
     borderRadius: 12,

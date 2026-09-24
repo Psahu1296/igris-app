@@ -6,6 +6,7 @@ import {
   CloudSun,
   Copy,
   CreditCard,
+  ListTodo,
   LogOut,
   MessageSquare,
   Mic,
@@ -40,6 +41,7 @@ import { COUNTDOWN_MS, matchFavourite, useFavourites, type Favourite } from '@/l
 import { AuthError, streamChat } from '@/lib/maestro';
 import { readMessages, replyTargets, sendReply, speakable, stopAlarm } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
+import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
 import { formatTranscript } from '@/lib/transcript';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useListening } from '@/lib/voice/use-listening';
@@ -149,6 +151,14 @@ export default function Transcript() {
     };
   }, [sessionId, sessionIsNew]);
 
+  // Todo alarms are armed from maestro's schedule (lib/todos.ts). Every return to the
+  // foreground re-probes the lane (state/session.tsx), which flips `probing`, so this
+  // also runs on launch and on every return — no AppState listener of its own.
+  useEffect(() => {
+    if (probing) return;
+    syncTodos(lane).catch((err: unknown) => console.warn('[todos] sync failed', err));
+  }, [lane, probing]);
+
   const patchDevice = useCallback(
     (turnId: string, change: Partial<DeviceStep>) =>
       setTurns((prev) =>
@@ -251,7 +261,7 @@ export default function Transcript() {
   );
 
   const ask = useCallback(
-    async (message: string) => {
+    async (message: string, extra?: { todoSession?: { todo_id: string; occurrence_at: string | null } }) => {
       // A reply to a pending call card is answered here, on the phone — sending "yes"
       // to maestro would only get it classified as chit-chat. Only for a single
       // candidate: "yes" to a list of three Rahuls would be a guess.
@@ -305,6 +315,7 @@ export default function Transcript() {
           lane: turnLane,
           message,
           sessionId,
+          todoSession: extra?.todoSession,
           onEvent: (event) => {
             if (event.kind === 'answer') {
               answered = true;
@@ -386,6 +397,10 @@ export default function Transcript() {
                     patch({ device: { action, status: 'failed', detail: reason(err) } })
                   );
               }
+            } else if (event.kind === 'quiz') {
+              patch({ quiz: event.card });
+            } else if (event.kind === 'todos') {
+              syncTodos(turnLane).catch((err: unknown) => console.warn('[todos] sync failed', err));
             } else {
               patch({ status: event.message, phase: event.phase });
             }
@@ -411,6 +426,31 @@ export default function Transcript() {
     },
     [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, confirmReply, cancelCall, startCountdown]
   );
+
+  // Start on a todo's alarm screen (src/app/todo.tsx): a fresh conversation, opened
+  // with the session's brief. Two steps, because `ask` must see the NEW sessionId —
+  // the brief waits in a ref until the session switch has rendered.
+  // The todo travels with the first message, so maestro's tutor marks that slot done
+  // when the session finishes (maestro tutor/session.py).
+  const startAfterSwitch = useRef<SessionStart | null>(null);
+  useEffect(() => {
+    const consume = () => {
+      const start = takeSessionStart();
+      if (!start) return;
+      startAfterSwitch.current = start;
+      void startSession();
+    };
+    consume();
+    return onSessionStart(consume);
+  }, [startSession]);
+  useEffect(() => {
+    const start = startAfterSwitch.current;
+    if (!start || !sessionIsNew) return;
+    startAfterSwitch.current = null;
+    void ask(`Start my session: ${start.title || start.brief}`, {
+      todoSession: { todo_id: start.todoId, occurrence_at: start.occurrence },
+    });
+  }, [sessionId, sessionIsNew, ask]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -447,6 +487,18 @@ export default function Transcript() {
                 )}
               </PressableScale>
             ) : null}
+
+            <PressableScale
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/todos');
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Todos"
+              style={styles.headerIconButton}>
+              <ListTodo size={14} color={Palette.text} />
+            </PressableScale>
 
             <PressableScale
               onPress={() => {
@@ -503,13 +555,14 @@ export default function Transcript() {
               onSignOut={() => void signOut()}
             />
           ) : (
-            turns.map((turn) => (
+            turns.map((turn, i) => (
               <Turn
                 key={turn.id}
                 turn={turn}
                 onCall={confirmCall}
                 onReply={confirmReply}
                 onCancelCall={cancelCall}
+                onAnswer={i === turns.length - 1 && !busy ? (text) => void ask(text) : undefined}
               />
             ))
           )}

@@ -1,7 +1,9 @@
 package expo.modules.igrisdevice
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.RemoteInput
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -121,6 +123,52 @@ class IgrisDeviceModule : Module() {
     // The no-permission fallback: opens the dialer with the number filled in.
     Function("dial") { number: String ->
       start(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)), "open the dialer")
+    }
+
+    // ── Todo alarms (TodoAlarms.kt) ─────────────────────────────────────────────
+    // JS syncs with maestro; everything that must work with the app closed is native.
+
+    Function("armTodos") { firings: String ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      TodoAlarmReceiver.ensureChannels(context)
+      TodoAlarms.arm(context.applicationContext, firings)
+    }
+
+    Function("todoOutbox") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      TodoAlarms.outbox(context)
+    }
+
+    Function("clearTodoOutbox") { ids: List<String> ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      TodoAlarms.clearOutbox(context, ids)
+    }
+
+    // What stands between a todo and a poke. All three are Settings switches or a
+    // prompt; the Todos screen shows whichever is off.
+    Function("todoAlarmAccess") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val nm = context.getSystemService(NotificationManager::class.java)
+      mapOf(
+        "notifications" to NotificationManagerCompat.from(context).areNotificationsEnabled(),
+        "fullScreen" to (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()),
+        "exactAlarms" to (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+          context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()),
+      )
+    }
+
+    Function("openTodoAlarmSettings") { which: String ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val pkg = Uri.fromParts("package", context.packageName, null)
+      val intent = when {
+        which == "fullScreen" && Build.VERSION.SDK_INT >= 34 ->
+          Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)
+        which == "exactAlarms" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+          Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)
+        else -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+          .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+      }
+      start(intent, "open that setting")
     }
 
     // ── Notifications (IgrisNotificationListener) ──────────────────────────────
