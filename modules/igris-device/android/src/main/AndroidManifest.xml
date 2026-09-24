@@ -1,0 +1,26 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- A normal (install-time) permission: no prompt. The clock app's SET_ALARM
+       handler requires callers to hold it. -->
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
+  <!-- Runtime (dangerous) permissions: asked for from JS at first use, never at
+       launch. Contacts to resolve "call mom"; CALL_PHONE to dial without a second
+       tap. If CALL_PHONE is refused, calls fall back to the dialer, which needs none. -->
+  <uses-permission android:name="android.permission.READ_CONTACTS" />
+  <uses-permission android:name="android.permission.CALL_PHONE" />
+
+  <!-- Android 11+ package visibility: without this, resolving the clock's
+       handler can fail even though it is installed. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.SET_ALARM" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SHOW_ALARMS" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.DIAL" />
+      <data android:scheme="tel" />
+    </intent>
+  </queries>
+</manifest>

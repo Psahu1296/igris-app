@@ -1,8 +1,37 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { fetchManifest, type AssetSpec } from '@/lib/assets/manifest';
 import { getSpeaker, releaseSpeaker, speechStatus } from '@/lib/voice/tts';
+
+/**
+ * Which turn is being spoken right now, shared across every useSpeech() instance.
+ *
+ * There is one speaker (tts.ts keeps a single engine) but several callers: the
+ * transcript auto-speaks each answer, and every turn card has its own Speak button.
+ * So "is THIS turn being spoken" cannot live in any one hook's state. A module store
+ * read through useSyncExternalStore is the smallest thing that gives every card the
+ * same answer. It drives the loader's `answering` state.
+ */
+let speakingId: string | null = null;
+const listeners = new Set<() => void>();
+
+function setSpeaking(id: string | null) {
+  speakingId = id;
+  listeners.forEach((notify) => notify());
+}
+
+const subscribe = (notify: () => void) => {
+  listeners.add(notify);
+  return () => {
+    listeners.delete(notify);
+  };
+};
+
+/** The id passed to speak() for the utterance currently playing, or null. */
+export function useSpeakingId(): string | null {
+  return useSyncExternalStore(subscribe, () => speakingId);
+}
 
 /**
  * Speaking, for screens that have something to say.
@@ -47,14 +76,20 @@ export function useSpeech() {
   const available = ready;
 
   const speak = useCallback(
-    async (text: string) => {
+    async (text: string, id?: string) => {
       if (!voice || !speechStatus(voice).ready) return;
+      const owner = id ?? null;
+      setSpeaking(owner);
       try {
         const tts = await getSpeaker(voice);
         await tts.speak(text);
         setProblem(null);
       } catch (err) {
         setProblem(err instanceof Error ? err.message : 'Igris could not speak that.');
+      } finally {
+        // speak() cancels whatever was playing, so a newer utterance may already own
+        // the speaker. Only clear the flag if it is still ours.
+        if (speakingId === owner) setSpeaking(null);
       }
     },
     [voice]
@@ -65,6 +100,7 @@ export function useSpeech() {
     try {
       const tts = await getSpeaker(voice);
       await tts.stop();
+      setSpeaking(null);
     } catch {
       // Nothing was playing, or the engine is already gone. Either is fine.
     }

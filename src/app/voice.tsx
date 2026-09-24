@@ -1,9 +1,21 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  HardDrive,
+  RefreshCw,
+  Trash2,
+  Volume2,
+  X,
+  Zap,
+} from 'lucide-react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Ask, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space } from '@/constants/theme';
 import { footprint, formatBytes, totalBytes } from '@/lib/assets/manifest';
@@ -12,33 +24,34 @@ import { speechStatus } from '@/lib/voice/tts';
 import { useSession } from '@/state/session';
 
 export default function Voice() {
-  const { lane } = useSession();
+  const { lanePref } = useSession();
   const { rows, loadError, reload, start, cancel, discard, downloadAll } = useAssets();
 
   const pending = rows?.filter((r) => r.phase !== 'ready') ?? [];
   const busy = rows?.some((r) => r.progress !== null) ?? false;
   const voice = rows?.find((r) => r.spec.id === 'voice')?.spec;
   const speech = rows ? speechStatus(voice) : null;
-  const accent = laneColor(lane);
+  const accent = laneColor(lanePref);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
       {/* Header Bar */}
       <View style={styles.header}>
         <View style={styles.headerTitleGroup}>
+          <Volume2 size={22} color={accent} />
           <Title style={styles.headerTitle}>Voice Models</Title>
           <View style={[styles.headerDot, { backgroundColor: accent }]} />
         </View>
-        <Pressable
+        <PressableScale
           onPress={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.back();
           }}
           hitSlop={12}
           accessibilityRole="button"
-          style={styles.backPill}>
-          <Meta style={styles.backText}>Close</Meta>
-        </Pressable>
+          style={styles.backButton}>
+          <X size={18} color={Palette.text} />
+        </PressableScale>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -48,16 +61,20 @@ export default function Voice() {
 
         {loadError ? (
           <View style={styles.errorCard}>
-            <Answer style={styles.error}>{loadError}</Answer>
-            <Pressable
+            <View style={styles.errorHeader}>
+              <AlertTriangle size={18} color={Palette.alert} />
+              <Answer style={styles.error}>{loadError}</Answer>
+            </View>
+            <PressableScale
               onPress={() => {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 void reload();
               }}
               accessibilityRole="button"
               style={styles.retryButton}>
+              <RefreshCw size={14} color={Palette.text} />
               <Ask style={styles.retryText}>Retry Download</Ask>
-            </Pressable>
+            </PressableScale>
           </View>
         ) : null}
 
@@ -80,22 +97,23 @@ export default function Voice() {
         ))}
 
         {pending.length > 0 && !busy ? (
-          <Pressable
+          <PressableScale
             onPress={() => {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               void downloadAll();
             }}
             accessibilityRole="button"
             style={[styles.primary, { backgroundColor: accent, shadowColor: accent }]}>
+            <Download size={18} color={Palette.ground} />
             <Text style={styles.primaryLabel}>
               {`Download All (${formatBytes(totalBytes(pending.map((r) => r.spec)))})`}
             </Text>
-          </Pressable>
+          </PressableScale>
         ) : null}
 
         {speech?.ready ? (
-          <View style={styles.statusBanner}>
-            <Text style={styles.statusBannerIcon}>⚡</Text>
+          <View style={[styles.statusBanner, { borderColor: accent + '33' }]}>
+            <Zap size={16} color={accent} />
             <Meta style={styles.statusBannerText}>Voice engine ready. Igris speaks automatically.</Meta>
           </View>
         ) : speech && pending.length === 0 ? (
@@ -158,7 +176,10 @@ function Row({
 
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
-          <Ask style={styles.rowTitle}>{spec.title}</Ask>
+          <View style={styles.titleRow}>
+            <HardDrive size={16} color={phase === 'ready' ? accent : Palette.muted} />
+            <Ask style={styles.rowTitle}>{spec.title}</Ask>
+          </View>
           <View
             style={[
               styles.phaseBadge,
@@ -167,6 +188,7 @@ function Row({
                 borderColor: phase === 'ready' ? accent + '44' : Palette.hairline,
               },
             ]}>
+            {phase === 'ready' ? <CheckCircle2 size={10} color={accent} /> : null}
             <Text
               style={[
                 styles.phaseBadgeText,
@@ -187,7 +209,7 @@ function Row({
 
         <View style={styles.rowFooter}>
           <Meta style={styles.statusMeta}>{status}</Meta>
-          <Pressable
+          <PressableScale
             onPress={handleAction}
             hitSlop={8}
             accessibilityRole="button"
@@ -198,8 +220,17 @@ function Row({
                 borderColor: accent + '44',
               },
             ]}>
-            <Text style={[styles.actionPillText, { color: accent }]}>{actionLabel}</Text>
-          </Pressable>
+            {working ? (
+              <X size={12} color={accent} />
+            ) : phase === 'ready' ? (
+              <Trash2 size={12} color={Palette.muted} />
+            ) : (
+              <Download size={12} color={accent} />
+            )}
+            <Text style={[styles.actionPillText, { color: phase === 'ready' ? Palette.muted : accent }]}>
+              {actionLabel}
+            </Text>
+          </PressableScale>
         </View>
 
         {error ? <Meta style={styles.error}>{error}</Meta> : null}
@@ -226,24 +257,22 @@ const styles = StyleSheet.create({
     gap: Space.sm,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
   },
   headerDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-  backPill: {
-    paddingHorizontal: Space.md,
-    paddingVertical: Space.xs,
-    borderRadius: 12,
-    backgroundColor: Palette.surfaceGlass,
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Palette.surfaceLift,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: Palette.hairline,
-  },
-  backText: {
-    color: Palette.text,
-    fontFamily: Font.uiMedium,
   },
   content: { paddingHorizontal: Gutter, paddingVertical: Space.lg, gap: Space.lg },
   lede: { color: Palette.muted, fontSize: 15, lineHeight: 22 },
@@ -260,8 +289,16 @@ const styles = StyleSheet.create({
     borderColor: Palette.alert + '44',
     gap: Space.md,
   },
-  error: { color: Palette.alert },
+  errorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+  },
+  error: { color: Palette.alert, flex: 1 },
   retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.xs,
     alignSelf: 'flex-start',
     paddingHorizontal: Space.md,
     paddingVertical: Space.xs,
@@ -291,8 +328,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+  },
   rowTitle: { color: Palette.text, fontSize: 16 },
   phaseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: Space.sm,
     paddingVertical: 2,
     borderRadius: 6,
@@ -317,6 +362,9 @@ const styles = StyleSheet.create({
     paddingRight: Space.sm,
   },
   actionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.xs,
     paddingHorizontal: Space.md,
     paddingVertical: Space.xs,
     borderRadius: 10,
@@ -337,8 +385,10 @@ const styles = StyleSheet.create({
   primary: {
     height: 50,
     borderRadius: 25,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Space.sm,
     marginTop: Space.md,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
@@ -357,7 +407,5 @@ const styles = StyleSheet.create({
     borderColor: Palette.hairline,
     marginTop: Space.sm,
   },
-  statusBannerIcon: { fontSize: 14 },
   statusBannerText: { color: Palette.muted, fontSize: 12 },
 });
-

@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-import type { Lane } from '@/lib/maestro';
+import type { Lane, LanePreference } from '@/lib/maestro';
 
 /**
  * Credential storage, backed by the Android Keystore.
@@ -16,7 +16,10 @@ const USERNAME = 'igris.username';
 const PASSWORD = 'igris.password';
 const tokenKey = (lane: Lane) => `igris.token.${lane}`;
 // Not a secret, but it lives here so it is cleared with everything else on sign-out.
-const SESSION = 'igris.session';
+const LANE_PREF = 'igris.lane';
+// Builds before 2026-09-24 restored the last-open thread from here. Nothing writes it
+// now (every launch starts a new conversation); it is only cleared, for old installs.
+const LEGACY_SESSION = 'igris.session';
 
 export type Credentials = { username: string; password: string };
 
@@ -38,15 +41,20 @@ export const loadToken = (lane: Lane) => SecureStore.getItemAsync(tokenKey(lane)
 
 export const clearToken = (lane: Lane) => SecureStore.deleteItemAsync(tokenKey(lane));
 
-export const saveSession = (id: string) => SecureStore.setItemAsync(SESSION, id);
+export const saveLanePref = (pref: LanePreference) => SecureStore.setItemAsync(LANE_PREF, pref);
 
-export const loadSession = () => SecureStore.getItemAsync(SESSION);
+/** Anything unrecognised — including a value from an older build — means 'auto'. */
+export async function loadLanePref(): Promise<LanePreference> {
+  const saved = await SecureStore.getItemAsync(LANE_PREF);
+  return saved === 'local' || saved === 'cloud' ? saved : 'auto';
+}
 
 export async function clearAll() {
   await Promise.all([
     SecureStore.deleteItemAsync(USERNAME),
     SecureStore.deleteItemAsync(PASSWORD),
-    SecureStore.deleteItemAsync(SESSION),
+    SecureStore.deleteItemAsync(LEGACY_SESSION),
+    SecureStore.deleteItemAsync(LANE_PREF),
     clearToken('local'),
     clearToken('cloud'),
   ]);

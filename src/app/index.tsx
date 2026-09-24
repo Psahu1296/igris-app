@@ -1,34 +1,80 @@
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import {
+  Check,
+  CloudSun,
+  Copy,
+  CreditCard,
+  LogOut,
+  MessageSquare,
+  Mic,
+  Plus,
+  TrendingUp,
+} from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AiCore } from '@/components/ai-core';
+import { IgrisLoader } from '@/components/igris-loader';
 import { Composer } from '@/components/composer';
-import { Sessions } from '@/components/sessions';
+import { IgrisMark } from '@/components/igris-mark';
 import { LaneBadge } from '@/components/lane-badge';
+import { LaneMenu } from '@/components/lane-menu';
+import { PressableScale } from '@/components/pressable-scale';
+import { Sessions } from '@/components/sessions';
 import { Turn, type TurnState } from '@/components/turn';
 import { Answer, Meta, Title } from '@/components/typography';
-import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme';
+import { Font, Gutter, laneColor, Palette, Space, Type, type Tint } from '@/constants/theme';
 import type { Lane } from '@/lib/config';
+import {
+  callContact,
+  findCallee,
+  performDeviceAction,
+  type Contact,
+  type DeviceStep,
+} from '@/lib/device';
+import { COUNTDOWN_MS, matchFavourite, useFavourites, type Favourite } from '@/lib/favourites';
 import { AuthError, streamChat } from '@/lib/maestro';
-import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { threadMessages } from '@/lib/threads';
+import { formatTranscript } from '@/lib/transcript';
+import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useListening } from '@/lib/voice/use-listening';
 import { useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
 /** Real questions, not feature advertisements — tapping one asks it. */
 const OPENERS = [
-  { icon: '📊', text: "what's today's revenue" },
-  { icon: '💳', text: 'who owes money' },
-  { icon: '⛅', text: 'weather in indore' },
+  { icon: TrendingUp, text: "what's today's revenue" },
+  { icon: CreditCard, text: 'who owes money' },
+  { icon: CloudSun, text: 'weather in indore' },
 ];
 
+/** Answers to a pending call card, typed or spoken. Whole-message matches only. */
+const YES = /^(yes|yeah|yep|haan|han|ha|ok|okay|sure|go ahead|do it|call|call (him|her|them))[.!]*$/i;
+const NO = /^(no|nope|nahi|na|cancel|don'?t|stop)[.!]*$/i;
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+const reason = (err: unknown) => (err instanceof Error ? err.message : 'Failed');
+
 export default function Transcript() {
-  const { lane, probing, refreshLane, signOut, sessionId, openSession, startSession } = useSession();
+  const {
+    lane,
+    probing,
+    lanePref,
+    laneReachable,
+    chooseLane,
+    refreshLane,
+    signOut,
+    sessionId,
+    sessionIsNew,
+    openSession,
+    startSession,
+  } = useSession();
+  const [laneMenuOpen, setLaneMenuOpen] = useState(false);
+  const [copiedChat, setCopiedChat] = useState(false);
   const speech = useSpeech();
   const [turns, setTurns] = useState<TurnState[]>([]);
   const [busy, setBusy] = useState(false);
@@ -37,20 +83,34 @@ export default function Transcript() {
   const listening = useListening(lane);
   const [browsing, setBrowsing] = useState(false);
 
-  /**
-   * Load a conversation's transcript whenever the open thread changes.
-   *
-   * maestro is the record, so this replaces whatever is on screen rather than
-   * merging: the alternative is the previous conversation's turns bleeding into
-   * the one you just opened.
-   */
+  // Which lane to read history from, without making the lane a reason to reload it.
+  // A lane switch mid-conversation used to wipe the transcript and refetch it — and
+  // the launch probe flipping 'cloud' → 'local' did exactly that on every start, one
+  // 404 from Render and one empty fetch from the Mac for a thread with no history.
+  const laneRef = useRef(lane);
+  useEffect(() => {
+    laneRef.current = lane;
+  }, [lane]);
+
+  // 'loading' is shown, not left blank: opening a thread costs ~5s today (a fresh
+  // Postgres connection per request to a far-away database — measured, see CLAUDE.md),
+  // and a blank screen with quick commands looks exactly like a NEW conversation.
+  const [history, setHistory] = useState<'ready' | 'loading' | { error: string }>('ready');
+
   useEffect(() => {
     let cancelled = false;
-    // Clearing synchronously is the point: the transcript on screen belongs to the
-    // conversation we are leaving, and showing it under the new one's title —
-    // even for the few frames a local fetch takes — reads as data corruption.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTurns([]);
+
+    // A thread minted on this device has no history by construction. Asking maestro
+    // anyway cost a round trip on every launch and returned nothing.
+    if (sessionIsNew) {
+      setHistory('ready');
+      return;
+    }
+
+    setHistory('loading');
+    const lane = laneRef.current;
     threadMessages(lane, sessionId)
       .then((messages) => {
         if (cancelled) return;
@@ -62,28 +122,135 @@ export default function Transcript() {
               ask: message.content,
               answer: null,
               status: null,
+              phase: null,
               error: null,
               lane,
               elapsedMs: null,
+              device: null,
             });
           } else if (restored.length > 0) {
-            // Pair the answer onto the question above it; maestro stores them as
-            // separate rows because that is what the table is, not what a turn is.
             restored[restored.length - 1].answer = message.content;
           }
         }
         setTurns(restored);
+        setHistory('ready');
       })
-      .catch(() => {
-        // A thread with no transcript yet is the normal case for a new session.
+      .catch((err) => {
+        // Only threads opened from Chats reach here, and those exist — so a failure is
+        // real and must be said, not silently rendered as an empty conversation.
+        if (!cancelled) {
+          setHistory({ error: err instanceof Error ? err.message : 'Could not open it.' });
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [lane, sessionId]);
+  }, [sessionId, sessionIsNew]);
+
+  const patchDevice = useCallback(
+    (turnId: string, change: Partial<DeviceStep>) =>
+      setTurns((prev) =>
+        prev.map((t) => (t.id === turnId && t.device ? { ...t, device: { ...t.device, ...change } } : t))
+      ),
+    []
+  );
+
+  // One pending timer per favourite's countdown. Cleared by Cancel, "no", Call now, or
+  // leaving the screen — a countdown must never outlive the card showing it.
+  const callTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const clearCallTimer = useCallback((turnId: string) => {
+    clearTimeout(callTimers.current.get(turnId));
+    callTimers.current.delete(turnId);
+  }, []);
+  useEffect(() => {
+    const timers = callTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  // How a call is placed: a tap on the confirm card, a spoken/typed "yes" to a card
+  // with a single candidate (see `ask`), a quick-call chip, or a favourite's countdown
+  // running out. maestro can propose, never ring.
+  const confirmCall = useCallback(
+    async (turnId: string, contact: Contact) => {
+      clearCallTimer(turnId);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void speech.stop(); // Igris talking over the ringback is not a feature
+      patchDevice(turnId, { status: 'running', detail: null, candidates: [contact] });
+      try {
+        patchDevice(turnId, { status: 'done', detail: await callContact(contact) });
+      } catch (err) {
+        patchDevice(turnId, { status: 'failed', detail: reason(err) });
+      }
+    },
+    [patchDevice, speech, clearCallTimer]
+  );
+
+  const cancelCall = useCallback(
+    (turnId: string) => {
+      clearCallTimer(turnId);
+      patchDevice(turnId, { status: 'cancelled', detail: 'Cancelled' });
+    },
+    [patchDevice, clearCallTimer]
+  );
+
+  const startCountdown = useCallback(
+    (turnId: string, favourite: Favourite) => {
+      clearCallTimer(turnId);
+      callTimers.current.set(
+        turnId,
+        setTimeout(() => void confirmCall(turnId, favourite), COUNTDOWN_MS)
+      );
+    },
+    [confirmCall, clearCallTimer]
+  );
+
+  // A quick-call chip on the home screen. The tap IS the confirmation, so it rings at
+  // once — but still as a turn, so the result (or a refused permission) is on screen.
+  const quickCall = useCallback(
+    (favourite: Favourite) => {
+      const id = `${Date.now()}`;
+      setTurns((prev) => [
+        ...prev,
+        {
+          id,
+          ask: `Call ${favourite.name}`,
+          answer: null,
+          status: null,
+          phase: null,
+          error: null,
+          lane,
+          elapsedMs: null,
+          device: {
+            action: { kind: 'call', name: favourite.name, number: null },
+            status: 'running',
+            detail: null,
+            candidates: [favourite],
+          },
+        },
+      ]);
+      void confirmCall(id, favourite);
+    },
+    [lane, confirmCall]
+  );
 
   const ask = useCallback(
     async (message: string) => {
+      // A reply to a pending call card is answered here, on the phone — sending "yes"
+      // to maestro would only get it classified as chit-chat. Only for a single
+      // candidate: "yes" to a list of three Rahuls would be a guess.
+      const pending = [...turns]
+        .reverse()
+        .find((t) => t.device?.status === 'confirm' || t.device?.status === 'countdown');
+      const only = pending?.device?.candidates?.length === 1 ? pending.device.candidates[0] : null;
+      if (pending && only && YES.test(message.trim())) return void confirmCall(pending.id, only);
+      if (pending && NO.test(message.trim())) return cancelCall(pending.id);
+
+      // Auto on Render may be stale: one probe that caught the Mac mid-restart kept the
+      // app on Render for the rest of the session, and Render's maestro lacks the Mac's
+      // tools (device actions, dhaba). Ask the Mac again before settling for Render —
+      // tens of ms on the tailnet, at most PROBE_TIMEOUT_MS when it really is asleep.
+      const turnLane = lanePref === 'auto' && lane === 'cloud' ? await refreshLane() : lane;
+
       const id = `${Date.now()}`;
       const startedAt = Date.now();
 
@@ -94,13 +261,15 @@ export default function Transcript() {
           ask: message,
           answer: null,
           status: 'Igris is thinking…',
+          phase: 'thinking',
           error: null,
-          lane,
+          lane: turnLane,
           elapsedMs: null,
+          device: null,
         },
       ]);
       setBusy(true);
-      void speech.stop(); // a new question interrupts the old answer
+      void speech.stop();
 
       const patch = (change: Partial<TurnState>) =>
         setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...change } : t)));
@@ -108,27 +277,67 @@ export default function Transcript() {
       try {
         let answered = false;
         await streamChat({
-          lane,
+          lane: turnLane,
           message,
           sessionId,
           onEvent: (event) => {
             if (event.kind === 'answer') {
               answered = true;
-              patch({ answer: event.message, status: null, elapsedMs: Date.now() - startedAt });
-              void speech.speak(event.message);
+              patch({
+                answer: event.message,
+                status: null,
+                phase: null,
+                elapsedMs: Date.now() - startedAt,
+              });
+              void speech.speak(event.message, id);
+            } else if (event.kind === 'device') {
+              // Perform it now, not after the answer: the words arrive next and
+              // describe it, so the phone should already be acting.
+              const { action } = event;
+              patch({ device: { action, status: 'running', detail: null } });
+              if (action.kind === 'call') {
+                // A quick-call favourite rings after a cancellable countdown. Anyone
+                // else is looked up and STOPS at the confirm card.
+                matchFavourite(action.name, action.number)
+                  .then(async (favourite) => {
+                    if (favourite) {
+                      patch({
+                        device: {
+                          action,
+                          status: 'countdown',
+                          detail: null,
+                          candidates: [favourite],
+                          deadline: Date.now() + COUNTDOWN_MS,
+                        },
+                      });
+                      startCountdown(id, favourite);
+                      return;
+                    }
+                    const candidates = await findCallee(action);
+                    patch({ device: { action, status: 'confirm', detail: null, candidates } });
+                  })
+                  .catch((err: unknown) =>
+                    patch({ device: { action, status: 'failed', detail: reason(err) } })
+                  );
+              } else {
+                performDeviceAction(action)
+                  .then((detail) => patch({ device: { action, status: 'done', detail } }))
+                  .catch((err: unknown) =>
+                    patch({ device: { action, status: 'failed', detail: reason(err) } })
+                  );
+              }
             } else {
-              patch({ status: event.message });
+              patch({ status: event.message, phase: event.phase });
             }
           },
         });
-        // maestro closed the stream without ever emitting a `response`. Say so
-        // rather than leaving a turn stuck on "thinking" forever.
         if (!answered) {
-          patch({ status: null, error: 'Igris closed the connection without answering.' });
+          patch({ status: null, phase: null, error: 'Igris closed the connection without answering.' });
         }
       } catch (err) {
         patch({
           status: null,
+          phase: null,
           error:
             err instanceof AuthError
               ? 'Your session ended. Sign out and back in.'
@@ -140,31 +349,78 @@ export default function Transcript() {
         setBusy(false);
       }
     },
-    [lane, sessionId, speech]
+    [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, cancelCall, startCountdown]
   );
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={[styles.fill, { paddingBottom: bottomInset }]}>
-        {/* Futuristic Top Bar */}
+        {/* Modern Glass Header Bar */}
         <View style={styles.header}>
           <View style={styles.brandRow}>
+            {/* The sigil replaces the old status dot: it carries the same lane colour,
+                cast in that lane's metal, and it is the thing the splash just drew. */}
+            <IgrisMark size={22} tint={lanePref} />
             <Title style={styles.headerTitle}>Igris</Title>
-            <View style={[styles.statusDot, { backgroundColor: laneColor(lane) }]} />
           </View>
+
           <View style={styles.headerActions}>
-            <Pressable
+            {/* Whole-conversation copy, for eval sets and prompt reviews. Icon-only:
+                the header already carries three labelled pills, and it only exists
+                once there is something to copy. */}
+            {turns.length > 0 ? (
+              <PressableScale
+                onPress={async () => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  await Clipboard.setStringAsync(formatTranscript(turns, sessionId));
+                  setCopiedChat(true);
+                  setTimeout(() => setCopiedChat(false), 2000);
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={copiedChat ? 'Conversation copied' : 'Copy whole conversation'}
+                style={styles.headerIconButton}>
+                {copiedChat ? (
+                  <Check size={14} color={laneColor(lanePref)} />
+                ) : (
+                  <Copy size={14} color={Palette.text} />
+                )}
+              </PressableScale>
+            ) : null}
+
+            <PressableScale
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setBrowsing(true);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Conversations"
+              style={styles.headerPill}>
+              <MessageSquare size={13} color={Palette.text} />
+              <Meta style={styles.headerPillText}>Chats</Meta>
+            </PressableScale>
+
+            <PressableScale
               onPress={() => {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push('/voice');
               }}
-              hitSlop={12}
+              hitSlop={8}
               accessibilityRole="button"
-              style={styles.voicePill}>
-              <Text style={styles.voicePillIcon}>🎙️</Text>
-              <Meta style={styles.voicePillText}>Voice</Meta>
-            </Pressable>
-            <LaneBadge lane={lane} probing={probing} onPress={() => void refreshLane()} />
+              accessibilityLabel="Voice Mode"
+              style={styles.headerPill}>
+              <Mic size={13} color={Palette.text} />
+              <Meta style={styles.headerPillText}>Voice</Meta>
+            </PressableScale>
+
+            <LaneBadge
+              lane={lane}
+              probing={probing}
+              pinned={lanePref !== 'auto'}
+              reachable={laneReachable}
+              onPress={() => setLaneMenuOpen(true)}
+            />
           </View>
         </View>
 
@@ -174,10 +430,22 @@ export default function Transcript() {
           contentContainerStyle={styles.scrollContent}
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
           keyboardDismissMode="on-drag">
-          {turns.length === 0 ? (
-            <Empty lane={lane} busy={busy} onPick={ask} onSignOut={() => void signOut()} />
+          {turns.length === 0 && history !== 'ready' ? (
+            <Opening tint={lanePref} error={history === 'loading' ? null : history.error} />
+          ) : turns.length === 0 ? (
+            <Empty
+              lane={lane}
+              tint={lanePref}
+              reachable={laneReachable}
+              busy={busy}
+              onPick={ask}
+              onQuickCall={quickCall}
+              onSignOut={() => void signOut()}
+            />
           ) : (
-            turns.map((turn) => <Turn key={turn.id} turn={turn} />)
+            turns.map((turn) => (
+              <Turn key={turn.id} turn={turn} onCall={confirmCall} onCancelCall={cancelCall} />
+            ))
           )}
         </ScrollView>
 
@@ -188,8 +456,6 @@ export default function Transcript() {
           voice={{
             available: listening.available,
             state: listening.state,
-            // A finished utterance is asked immediately: the point of talking to
-            // Igris is not to fill in a text box you then have to press send on.
             start: () => void listening.start((text) => void ask(text)),
             stop: () => void listening.stop(),
           }}
@@ -210,71 +476,217 @@ export default function Transcript() {
         }}
         onClose={() => setBrowsing(false)}
       />
+
+      <LaneMenu
+        visible={laneMenuOpen}
+        lane={lane}
+        lanePref={lanePref}
+        reachable={laneReachable}
+        onChoose={(pref) => void chooseLane(pref)}
+        onClose={() => setLaneMenuOpen(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+function Opening({ tint, error }: { tint: Tint; error: string | null }) {
+  return (
+    <Animated.View entering={FadeIn.duration(250)} style={styles.openingContainer}>
+      {error ? (
+        <Answer style={styles.openingError}>{`Couldn't open that conversation. ${error}`}</Answer>
+      ) : (
+        <>
+          <IgrisLoader tint={tint} state="thinking" size={56} />
+          <Meta style={styles.openingText}>Opening conversation…</Meta>
+        </>
+      )}
+    </Animated.View>
   );
 }
 
 function Empty({
   lane,
+  tint,
+  reachable,
   busy,
   onPick,
+  onQuickCall,
   onSignOut,
 }: {
   lane: Lane;
+  /** The mode colour — Auto, or the pinned lane. See Tint in theme.ts. */
+  tint: Tint;
+  /** False when the user pinned a lane that is not answering. */
+  reachable: boolean;
   busy: boolean;
   onPick: (message: string) => void;
+  onQuickCall: (favourite: Favourite) => void;
   onSignOut: () => void;
 }) {
+  const accent = laneColor(tint);
+  const favourites = useFavourites();
+
   return (
     <Animated.View entering={FadeIn.duration(400)} style={styles.emptyContainer}>
       {/* Central Interactive AI Core */}
       <View style={styles.coreWrapper}>
-        <AiCore lane={lane} mode={busy ? 'thinking' : 'idle'} size={110} />
+        <IgrisLoader tint={tint} state={busy ? 'thinking' : 'idle'} size={110} breathe />
       </View>
 
+      {/* Before lanes could be pinned, lane === 'local' implied the Mac had answered
+          a probe. A pin breaks that: the lane is local because you said so, not
+          because anything is listening. So "connected" has to check reachability,
+          or it claims a live Mac in exactly the state the pin warning exists for. */}
       <Answer style={styles.emptyLede}>
-        {lane === 'local'
-          ? 'Connected to the Mac. All system tools active.'
-          : 'Operating via Render Cloud. System tools limited, answers may take ~30s.'}
+        {lane === 'cloud'
+          ? 'Operating via Render Cloud. System tools limited, answers may take ~30s.'
+          : reachable
+            ? 'Connected to the Mac. All system tools active.'
+            : 'Pinned to the Mac, but it is not answering. Wake it, or switch lanes above.'}
       </Answer>
+
+      {/* Quick call: favourites ring on one tap. Managed on /favourites. */}
+      <View style={styles.openersSection}>
+        <View style={[styles.sectionHead, favourites.length === 0 && styles.centred]}>
+          <Meta style={styles.openersTitle}>QUICK CALL</Meta>
+          {favourites.length > 0 ? (
+            <PressableScale
+              onPress={() => router.push('/favourites')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Manage quick-call contacts">
+              <Meta style={[styles.sectionLink, { color: accent }]}>Edit</Meta>
+            </PressableScale>
+          ) : null}
+        </View>
+        <View style={styles.callChips}>
+          {favourites.map((favourite) => (
+            <PressableScale
+              key={favourite.number}
+              onPress={() => onQuickCall(favourite)}
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${favourite.name}`}
+              style={[styles.callChip, { borderColor: accent + '44' }]}>
+              <View style={[styles.callChipAvatar, { backgroundColor: accent + '22' }]}>
+                <Text style={[styles.callChipInitial, { color: accent }]}>
+                  {favourite.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.callChipName} numberOfLines={1}>
+                {favourite.alias ? capitalise(favourite.alias) : favourite.name.split(/\s+/)[0]}
+              </Text>
+            </PressableScale>
+          ))}
+          {favourites.length === 0 ? (
+            <PressableScale
+              onPress={() => router.push('/favourites')}
+              accessibilityRole="button"
+              style={[styles.callChip, styles.callChipAdd]}>
+              <Plus size={14} color={Palette.muted} />
+              <Text style={styles.callChipAddText}>Add people Igris can call instantly</Text>
+            </PressableScale>
+          ) : null}
+        </View>
+      </View>
 
       {/* Suggested Quick Openers */}
       <View style={styles.openersSection}>
         <Meta style={styles.openersTitle}>QUICK COMMANDS</Meta>
         <View style={styles.openersGrid}>
-          {OPENERS.map((opener, idx) => (
-            <Animated.View
-              key={opener.text}
-              entering={FadeInDown.delay(100 * idx).springify()}>
-              <Pressable
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onPick(opener.text);
-                }}
-                accessibilityRole="button"
-                style={styles.openerCard}>
-                <Text style={styles.openerIcon}>{opener.icon}</Text>
-                <Text style={styles.openerText}>{opener.text}</Text>
-              </Pressable>
-            </Animated.View>
-          ))}
+          {OPENERS.map((opener, idx) => {
+            const IconComp = opener.icon;
+            return (
+              <Animated.View
+                key={opener.text}
+                entering={FadeInDown.delay(100 * idx).springify()}>
+                <PressableScale
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onPick(opener.text);
+                  }}
+                  accessibilityRole="button"
+                  style={styles.openerCard}>
+                  <View style={[styles.openerIconBox, { backgroundColor: accent + '1E' }]}>
+                    <IconComp size={15} color={accent} />
+                  </View>
+                  <Text style={styles.openerText}>{opener.text}</Text>
+                </PressableScale>
+              </Animated.View>
+            );
+          })}
         </View>
       </View>
 
-      <Pressable
+      <PressableScale
         onPress={() => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           onSignOut();
         }}
         accessibilityRole="button"
         style={styles.signOutButton}>
+        <LogOut size={13} color={Palette.faint} />
         <Meta style={styles.signOutText}>Sign out session</Meta>
-      </Pressable>
+      </PressableScale>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  centred: { justifyContent: 'center' },
+  sectionLink: {
+    fontSize: 12,
+    fontFamily: Font.uiMedium,
+  },
+  callChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: Space.sm,
+  },
+  callChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+    paddingLeft: 6,
+    paddingRight: Space.md,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: Palette.surface,
+    maxWidth: '100%',
+  },
+  callChipAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callChipInitial: {
+    fontFamily: Font.uiMedium,
+    fontSize: 13,
+  },
+  callChipName: {
+    color: Palette.text,
+    fontFamily: Font.ui,
+    fontSize: 14,
+    flexShrink: 1,
+  },
+  callChipAdd: {
+    borderColor: Palette.hairlineBright,
+    borderStyle: 'dashed',
+    paddingLeft: Space.md,
+  },
+  callChipAddText: {
+    color: Palette.muted,
+    fontFamily: Font.ui,
+    fontSize: 13,
+  },
   screen: { flex: 1, backgroundColor: Palette.ground },
   fill: { flex: 1 },
   header: {
@@ -286,36 +698,41 @@ const styles = StyleSheet.create({
     paddingBottom: Space.md,
     borderBottomWidth: 1,
     borderBottomColor: Palette.hairline,
+    backgroundColor: Palette.ground,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Space.sm,
+    gap: Space.xs + 2,
   },
   headerTitle: {
     fontFamily: Font.voiceMedium,
     color: Palette.text,
     fontSize: 24,
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
-  voicePill: {
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
+  headerPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Space.xs,
     paddingHorizontal: Space.sm + 2,
-    paddingVertical: Space.xs,
+    paddingVertical: Space.xs + 1,
     borderRadius: 12,
     backgroundColor: Palette.surfaceGlass,
     borderWidth: 1,
     borderColor: Palette.hairline,
   },
-  voicePillIcon: { fontSize: 12 },
-  voicePillText: { color: Palette.text, fontFamily: Font.uiMedium, fontSize: 11 },
+  headerPillText: { color: Palette.text, fontFamily: Font.uiMedium, fontSize: 11 },
+  headerIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.surfaceGlass,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
   scroll: { flex: 1 },
   scrollContent: { paddingTop: Space.md, paddingBottom: Space.xl },
   emptyContainer: {
@@ -324,6 +741,14 @@ const styles = StyleSheet.create({
     paddingTop: Space.xl,
     gap: Space.xl,
   },
+  openingContainer: {
+    paddingHorizontal: Gutter,
+    alignItems: 'center',
+    paddingTop: Space.huge * 2,
+    gap: Space.lg,
+  },
+  openingText: { color: Palette.muted, fontFamily: Font.ui },
+  openingError: { color: Palette.alert, textAlign: 'center' },
   coreWrapper: {
     marginVertical: Space.md,
     alignItems: 'center',
@@ -333,8 +758,8 @@ const styles = StyleSheet.create({
     color: Palette.muted,
     textAlign: 'center',
     maxWidth: 340,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 23,
   },
   openersSection: {
     width: '100%',
@@ -356,13 +781,17 @@ const styles = StyleSheet.create({
     gap: Space.md,
     paddingHorizontal: Space.lg,
     paddingVertical: Space.md,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: Palette.surfaceGlass,
     borderWidth: 1,
     borderColor: Palette.hairline,
   },
-  openerIcon: {
-    fontSize: 16,
+  openerIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   openerText: {
     fontFamily: Font.ui,
@@ -370,6 +799,9 @@ const styles = StyleSheet.create({
     ...Type.ask,
   },
   signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.xs,
     marginTop: Space.lg,
     paddingVertical: Space.sm,
     paddingHorizontal: Space.lg,
@@ -378,4 +810,3 @@ const styles = StyleSheet.create({
     color: Palette.faint,
   },
 });
-

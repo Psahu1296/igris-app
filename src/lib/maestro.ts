@@ -1,10 +1,17 @@
 import { fetch as streamFetch } from 'expo/fetch';
 
-import { LOCAL_URL, PROBE_TIMEOUT_MS, urlFor, type Lane } from '@/lib/config';
+import {
+  LOCAL_URL,
+  PROBE_TIMEOUT_MS,
+  urlFor,
+  type Lane,
+  type LanePreference,
+} from '@/lib/config';
+import { DEVICE_CAPABILITIES, parseDeviceAction, type DeviceAction } from '@/lib/device';
 import { createSseParser } from '@/lib/sse';
 import * as secure from '@/lib/secure';
 
-export type { Lane };
+export type { Lane, LanePreference };
 
 /** Credentials were rejected outright — re-logging in will not help. */
 export class AuthError extends Error {}
@@ -120,10 +127,24 @@ export async function transcribe(lane: Lane, wav: Uint8Array): Promise<string> {
   return (body.text ?? '').trim();
 }
 
+/**
+ * Where a turn is, in the terms maestro actually streams. `working` means an agent
+ * was started (`agent_started`) — the dhaba analyst, the researcher — which is the
+ * part of a turn that calls tools. Direct replies never enter it, and that is
+ * correct, not a gap. There is no 'answering' here on purpose: maestro sends the
+ * whole answer as one `response` frame at the end, so the phase would last a frame.
+ */
+export type Phase = 'thinking' | 'working';
+
 /** What the transcript needs to know about a turn in flight. */
 export type TurnEvent =
-  | { kind: 'status'; message: string }
-  | { kind: 'answer'; message: string };
+  | { kind: 'status'; message: string; phase: Phase }
+  | { kind: 'answer'; message: string }
+  /** Something for the phone to do (lib/device.ts). Arrives just before the answer. */
+  | { kind: 'device'; action: DeviceAction };
+
+/** Unknown event names fall back to thinking, so a new maestro event can't stall the UI. */
+const phaseOf = (event: string): Phase => (event === 'agent_started' ? 'working' : 'thinking');
 
 /**
  * Ask Igris, streaming maestro's own progress events back as they arrive.
@@ -151,7 +172,11 @@ export async function streamChat(opts: {
         Accept: 'text/event-stream',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({
+        message,
+        session_id: sessionId,
+        capabilities: DEVICE_CAPABILITIES,
+      }),
       signal,
     });
     return res;
@@ -184,6 +209,17 @@ export async function streamChat(opts: {
     for (const frame of parse(decoder.decode(value, { stream: true }))) {
       if (frame.event === 'done') return;
 
+      if (frame.event === 'device_action') {
+        let action: DeviceAction | null = null;
+        try {
+          action = parseDeviceAction(JSON.parse(frame.data));
+        } catch {
+          // malformed: ignored below, like any other bad frame
+        }
+        if (action) onEvent({ kind: 'device', action });
+        continue;
+      }
+
       let text: string;
       try {
         text = (JSON.parse(frame.data) as { message?: string }).message ?? '';
@@ -192,8 +228,12 @@ export async function streamChat(opts: {
       }
       if (!text) continue;
 
+      // The event NAME used to be dropped here, which is why the app could only ever
+      // show "some status". It now carries the phase through to the loader.
       onEvent(
-        frame.event === 'response' ? { kind: 'answer', message: text } : { kind: 'status', message: text }
+        frame.event === 'response'
+          ? { kind: 'answer', message: text }
+          : { kind: 'status', message: text, phase: phaseOf(frame.event) }
       );
     }
   }

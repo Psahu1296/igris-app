@@ -1,10 +1,12 @@
 import * as Haptics from 'expo-haptics';
+import { Loader2, Lock, LogIn, User } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AiCore } from '@/components/ai-core';
+import { IgrisLoader } from '@/components/igris-loader';
+import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme';
 import { AuthError } from '@/lib/maestro';
@@ -12,7 +14,7 @@ import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useSession } from '@/state/session';
 
 export function SignIn() {
-  const { signIn, lane } = useSession();
+  const { signIn, lane, lanePref } = useSession();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export function SignIn() {
   const bottomInset = useKeyboardInset();
 
   const ready = username.trim().length > 0 && password.length > 0 && !busy;
-  const accent = laneColor(lane);
+  const accent = laneColor(lanePref);
 
   const submit = async () => {
     if (!ready) return;
@@ -47,7 +49,7 @@ export function SignIn() {
         <Animated.View entering={FadeInDown.springify()} style={styles.body}>
           {/* Hero Branding with AiCore */}
           <View style={styles.heroSection}>
-            <AiCore lane={lane} mode={busy ? 'thinking' : 'idle'} size={90} />
+            <IgrisLoader tint={lanePref} state={busy ? 'thinking' : 'idle'} size={90} breathe />
             <Title style={styles.heroTitle}>Igris</Title>
             <Answer style={styles.lede}>Sign in with your maestro owner account.</Answer>
           </View>
@@ -55,6 +57,7 @@ export function SignIn() {
           {/* Glass Form Fields Card */}
           <View style={styles.card}>
             <Field
+              icon={User}
               label="USERNAME"
               value={username}
               onChangeText={setUsername}
@@ -64,6 +67,7 @@ export function SignIn() {
             />
             <View style={styles.divider} />
             <Field
+              icon={Lock}
               label="PASSWORD"
               value={password}
               onChangeText={setPassword}
@@ -77,7 +81,7 @@ export function SignIn() {
           {error ? <Answer style={styles.error}>{error}</Answer> : null}
 
           {/* Action Button */}
-          <Pressable
+          <PressableScale
             onPress={submit}
             disabled={!ready}
             accessibilityRole="button"
@@ -85,13 +89,19 @@ export function SignIn() {
               styles.button,
               {
                 backgroundColor: ready ? accent : Palette.surfaceLift,
+                borderColor: ready ? accent : Palette.hairline,
                 shadowColor: ready ? accent : 'transparent',
               },
             ]}>
+            {busy ? (
+              <Loader2 size={18} color={Palette.ground} />
+            ) : (
+              <LogIn size={18} color={ready ? Palette.ground : Palette.faint} />
+            )}
             <Text style={[styles.buttonLabel, { color: ready ? Palette.ground : Palette.faint }]}>
               {busy ? 'Authenticating…' : 'Sign in to Igris'}
             </Text>
-          </Pressable>
+          </PressableScale>
 
           <Meta style={styles.footnote}>
             {lane === 'local'
@@ -105,13 +115,21 @@ export function SignIn() {
 }
 
 function Field({
+  icon: IconComp,
   label,
   placeholder,
   ...input
-}: { label: string; placeholder?: string } & React.ComponentProps<typeof TextInput>) {
+}: {
+  icon: React.ComponentType<{ size: number; color: string }>;
+  label: string;
+  placeholder?: string;
+} & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={styles.field}>
-      <Meta style={styles.fieldLabel}>{label}</Meta>
+      <View style={styles.fieldHeader}>
+        <IconComp size={12} color={Palette.faint} />
+        <Meta style={styles.fieldLabel}>{label}</Meta>
+      </View>
       <TextInput
         {...input}
         style={styles.input}
@@ -147,6 +165,11 @@ const styles = StyleSheet.create({
     gap: Space.sm,
   },
   field: { gap: Space.xs },
+  fieldHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.xs,
+  },
   fieldLabel: {
     fontSize: 10,
     letterSpacing: 1.2,
@@ -157,7 +180,7 @@ const styles = StyleSheet.create({
     color: Palette.text,
     fontFamily: Font.ui,
     ...Type.ask,
-    paddingVertical: Space.sm,
+    paddingVertical: Space.xs,
   },
   divider: {
     height: 1,
@@ -167,9 +190,12 @@ const styles = StyleSheet.create({
   button: {
     height: 52,
     borderRadius: 26,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Space.sm,
     marginTop: Space.sm,
+    borderWidth: 1,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 10,
@@ -178,4 +204,3 @@ const styles = StyleSheet.create({
   buttonLabel: { fontFamily: Font.uiMedium, fontSize: 15, letterSpacing: 0.5 },
   footnote: { marginTop: Space.xs, textAlign: 'center', color: Palette.faint },
 });
-

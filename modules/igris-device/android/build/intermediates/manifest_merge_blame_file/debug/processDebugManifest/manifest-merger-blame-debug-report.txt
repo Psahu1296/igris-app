@@ -1,0 +1,56 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="expo.modules.igrisdevice" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+6    <!--
+7       A normal (install-time) permission: no prompt. The clock app's SET_ALARM
+8       handler requires callers to hold it.
+9    -->
+10    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+10-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:4:3-76
+10-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:4:20-73
+11
+12    <!--
+13       Runtime (dangerous) permissions: asked for from JS at first use, never at
+14       launch. Contacts to resolve "call mom"; CALL_PHONE to dial without a second
+15       tap. If CALL_PHONE is refused, calls fall back to the dialer, which needs none.
+16    -->
+17    <uses-permission android:name="android.permission.READ_CONTACTS" />
+17-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:9:3-70
+17-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:9:20-67
+18    <uses-permission android:name="android.permission.CALL_PHONE" />
+18-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:10:3-67
+18-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:10:20-64
+19
+20    <!--
+21       Android 11+ package visibility: without this, resolving the clock's
+22       handler can fail even though it is installed.
+23    -->
+24    <queries>
+24-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:14:3-25:13
+25        <intent>
+25-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:15:5-17:14
+26            <action android:name="android.intent.action.SET_ALARM" />
+26-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:16:7-64
+26-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:16:15-61
+27        </intent>
+28        <intent>
+28-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:18:5-20:14
+29            <action android:name="android.intent.action.SHOW_ALARMS" />
+29-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:19:7-66
+29-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:19:15-63
+30        </intent>
+31        <intent>
+31-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:21:5-24:14
+32            <action android:name="android.intent.action.DIAL" />
+32-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:22:7-59
+32-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:22:15-56
+33
+34            <data android:scheme="tel" />
+34-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:23:7-36
+34-->/Volumes/DevSSD/projects/ai-projects/igris-app/modules/igris-device/android/src/main/AndroidManifest.xml:23:13-33
+35        </intent>
+36    </queries>
+37
+38</manifest>

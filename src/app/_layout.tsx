@@ -80,6 +80,7 @@ function RootNavigator() {
       <Stack.Protected guard={status === 'signed-in'}>
         <Stack.Screen name="index" />
         <Stack.Screen name="voice" />
+        <Stack.Screen name="favourites" />
       </Stack.Protected>
 
       <Stack.Protected guard={status !== 'signed-in'}>

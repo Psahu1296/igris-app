@@ -2,31 +2,34 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 
+import { IgrisMark } from '@/components/igris-mark';
 import { Font, Palette, Type } from '@/constants/theme';
 
 /**
  * The opening moment.
  *
- * It draws the same 2px rule that sits behind every answer Igris gives, so the
- * app's one structural device is also its first gesture rather than a logo that
- * appears nowhere else. The rule grows from a point in tungsten — the colour that
- * means "the Mac is answering" — like a lamp catching, then the name resolves
- * beside it.
+ * The sigil draws itself — a tungsten line traces the crown, the core catches, and
+ * the fill floods in — and lands on exactly the artwork that sits on the home
+ * screen, so the app appears to finish drawing its own icon. Tungsten is the colour
+ * that means "the Mac is answering", which is the state the app hopes to be in. The
+ * name then resolves beside it.
  *
  * On Android `SplashScreen.setOptions({ fade })` does nothing (iOS only), so the
  * native splash is hidden only after this overlay has been laid out and painted.
  * Hiding it any earlier shows a frame of bare window between the two.
  */
 
-const RULE_HEIGHT = 72;
+const MARK_SIZE = 76;
 
 export function AnimatedSplash({ ready, onFinish }: { ready: boolean; onFinish: () => void }) {
   const [introDone, setIntroDone] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
+  // null until AccessibilityInfo answers. The stage stays empty for that frame or
+  // two rather than starting the draw and then restarting it in the other mode —
+  // the overlay is already painting the ground colour, so nothing flashes.
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
 
   // Lazy useState, not useRef: these values are read during render to build the
   // styles below, and reading a ref there is a bug React lints for.
-  const [rule] = useState(() => new Animated.Value(0)); // 0 → RULE_HEIGHT, drives height
   const [word] = useState(() => new Animated.Value(0)); // 0 → 1, opacity + slide
   const [cover] = useState(() => new Animated.Value(1)); // 1 → 0, the fade out
 
@@ -43,36 +46,30 @@ export function AnimatedSplash({ ready, onFinish }: { ready: boolean; onFinish: 
       if (cancelled) return;
       setReduceMotion(enabled);
 
+      // Respect the setting by arriving at the final state, not by animating faster.
       if (enabled) {
-        // Respect the setting by arriving at the final state, not by animating faster.
-        rule.setValue(RULE_HEIGHT);
         word.setValue(1);
         setIntroDone(true);
-        return;
       }
-
-      Animated.sequence([
-        Animated.timing(rule, {
-          toValue: RULE_HEIGHT,
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false, // height is a layout prop
-        }),
-        Animated.timing(word, {
-          toValue: 1,
-          duration: 380,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished && !cancelled) setIntroDone(true);
-      });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [rule, word]);
+  }, [word]);
+
+  // The name is the sigil's follow-through, so it waits for the mark rather than
+  // running on a timer that would drift out of step if the draw is retimed.
+  const handleMarkDone = useCallback(() => {
+    Animated.timing(word, {
+      toValue: 1,
+      duration: 380,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setIntroDone(true);
+    });
+  }, [word]);
 
   // Hold the curtain until the intro has played AND the session has resolved, so
   // the transcript never appears mid-animation and the sign-in form never flashes.
@@ -101,11 +98,9 @@ export function AnimatedSplash({ ready, onFinish }: { ready: boolean; onFinish: 
       onLayout={handleLayout}
       pointerEvents="none">
       <View style={styles.stage}>
-        {/* Centred container, so animating height alone grows the rule from a
-            point outward in both directions — the ignition. */}
-        <View style={styles.ruleSlot}>
-          <Animated.View style={[styles.rule, { height: rule }]} />
-        </View>
+        {reduceMotion === null ? null : (
+          <IgrisMark size={MARK_SIZE} animate={!reduceMotion} onDone={handleMarkDone} />
+        )}
 
         <Animated.Text
           style={[
@@ -135,8 +130,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   stage: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  ruleSlot: { height: RULE_HEIGHT, justifyContent: 'center' },
-  rule: { width: 2, borderRadius: 1, backgroundColor: Palette.local },
   word: {
     fontFamily: Font.voiceMedium,
     color: Palette.text,

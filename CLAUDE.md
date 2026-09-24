@@ -45,6 +45,28 @@ Consequences, in order of how much they will bite:
   Mac over Tailscale, running Ollama, all 9 tools, ~1s. `cloud` = Render, running Claude
   via maestro's `PERSONA_MODEL`, 8 tools, ~34s cold start. A health probe picks the lane;
   the active lane is always visible in the UI. **maestro needs no changes for this.**
+- **The lane can be pinned** (added 2026-09-24). Tapping the header chip opens
+  `components/lane-menu.tsx`: Auto / Mac / Render. A pin overrules the probe, persists
+  in SecureStore (`igris.lane`), and is honoured *even when the pinned lane is down* —
+  the probe still runs, but only so the chip can turn red and say so. `session.tsx`
+  owns this as `lanePref` + `laneReachable`; `lane` is still what requests use.
+- **`IgrisLoader`: one motion, the colour is the step** (added 2026-09-24). A pen
+  stroke circles the outline over a dimmed body; violet = thinking, pink = working
+  (tools), the answering brain's metal = answering, lit and still = idle. A per-step
+  motion was tried first — running segments for "working" — and on the phone it read
+  as a bug crawling over the logo. Don't reintroduce motion per step. Phases come from maestro's stream (`lib/maestro.ts::phaseOf`: `agent_started` →
+  working, everything else → thinking) — the event name used to be thrown away.
+  There is deliberately **no answering phase from the stream**: maestro sends the
+  whole answer as one `response` frame at `on_chain_end`, so it would last one frame.
+  Answering is driven by speech instead — `useSpeakingId()` in `use-speech.ts`, a
+  module store shared by every `useSpeech()` caller. Idle loaders in a transcript
+  must stay still; only the turn being spoken moves.
+- **Theme colour follows the MODE, facts follow the LANE.** `Tint` in `theme.ts` is
+  `'auto' | Lane` — exactly `lanePref`. Accents (sigil, orb, composer, chip) use it:
+  emerald for Auto, tungsten for Mac, steel for Render. Anything stating a fact about
+  a real answer uses `lane` instead: `urlFor`, mic availability, and each turn's
+  "via Mac/Render" in `turn.tsx`. Mixing them up either hides which brain answered or
+  paints a Render answer gold. The chip shows both: mode as its colour, brain as its icon.
 - **The local lane is the *reach* lane, not the fast lane.** Measured from the phone
   on 2026-09-23 over LAN: 30.1s for a direct reply, against 2.8s from Render. maestro's
   `PERSONA_MODEL` is `gpt-4.1-nano`, so the Mac makes a network call to OpenAI — there is
@@ -67,11 +89,12 @@ Consequences, in order of how much they will bite:
   auto-relogin on 401, with backoff, because `/login` is rate-limited to 5/minute.
 - **`thread_id` depends on role** (`maestro/main.py::_thread_config`). A *demo* session is
   namespaced to `demo:<username>:<session_id>`, but the **owner's `thread_id` is the
-  `session_id` the client sends, verbatim**. So `EXPO_PUBLIC_MAESTRO_SESSION_ID` decides
-  whether the phone continues the Mac voice loop's conversation or starts its own — it
-  must match `MAESTRO_SESSION_ID` in `maestro/.env` to share one continuous Igris.
-  That value is **`voice-v2`**, not `voice`: the `voice` thread was retired on 2026-06-18
-  with poisoned memory, and maestro will resume it without complaint if you ask it to.
+  `session_id` the client sends, verbatim**. Since 2026-09-24 the phone starts a
+  **new thread on every launch** (`phone-<utc stamp>-<rand>`, `state/session.tsx`) and
+  persists nothing; old threads — including `voice-v2`, which the Mac voice loop and
+  Alexa share — are opened from Chats. `EXPO_PUBLIC_MAESTRO_SESSION_ID` is gone; a value
+  left in `.env` is ignored. Never reopen `voice`: that thread was retired on 2026-06-18
+  with poisoned memory, and maestro will resume it without complaint.
 - **Voice is all on-device** via `react-native-sherpa-onnx`: mic → streaming STT →
   (network) → Piper `en_GB-alan-medium` TTS. Note this is one stage shorter than
   `maestro/voice/` (`vad.py` → `stt.py` → `brain.py` → `tts.py`): **there is no VAD
@@ -186,12 +209,59 @@ released with no underruns. Download to speech took under 20s on 5G.
   `android/local.properties` points Gradle at that SDK and is gitignored, so every
   machine sets its own. Versions are pinned by the project, not chosen: compileSdk 36,
   NDK 27.1.12297006, CMake 3.30.5, Gradle 9.3.1, JDK 17.
+- **"Tailscale connected" does not mean the Mac lane works.** Both devices can show
+  as connected while the chip says Render: the tailnet only carries the packets, and
+  the probe needs maestro *listening* on the Mac. Check
+  `lsof -nP -iTCP:8000 -sTCP:LISTEN`, then `curl <LOCAL_URL>/health` from the Mac.
+  maestro must also be started with `--host 0.0.0.0` — uvicorn's default `127.0.0.1`
+  is unreachable from the tailnet even when it is running.
+- **Every maestro request pays ~2s to reach Postgres before doing anything.** Measured
+  2026-09-24: maestro's database is on Railway (`thomas.proxy.rlwy.net`, despite the
+  workspace note that Railway is gone) — ~1.9–2.1s to open a connection, ~320ms per
+  query. `chat_history._connect()` and `demo_auth._connect()` open a NEW connection
+  per call, and `validate_session` runs on every authenticated request. So opening a
+  thread from Chats costs ~5s (auth + query), and every chat turn carries ~6s of pure
+  connection setup (auth + two `chat_history.append`s). The app now shows "Opening
+  conversation…" instead of a blank screen, but the fix is server-side: one shared
+  `psycopg_pool.AsyncConnectionPool` (already in requirements) opened in the lifespan.
 - The "Local" lane is silently dead when the Mac is asleep. Health-probe every turn and
   fall back, never hang.
 - Porcupine needs a Picovoice AccessKey at runtime. It is a secret: `.env`, not the repo.
 - `expo-file-system` on SDK 57 exposes **no SHA-256** — only `md5`. Asset integrity is
   therefore size + MD5, which catches a truncated or corrupt download. It is not a
   tamper check; HTTPS to a release we control is what covers that. Don't claim otherwise.
+- **The app icon is generated, not hand-made.** `assets/logo.svg` is the source;
+  `node assets/icon-src/build-icons.mjs` regenerates every PNG in `assets/images/`
+  plus `src/lib/logo.ts`. Never hand-edit those outputs. Two things it exists to get
+  right: the mark must fit a **626px centred circle** on the 1024 canvas (OEM masks
+  crop adaptive icons to 66dp), and the monochrome layer needs a real alpha channel
+  with the flame punched out by a `<mask>` — Android keeps only alpha for themed
+  icons. Full reasoning in `assets/ICON_BRIEF.md`.
+- **The logo was drawn on white and had to be inverted.** Recraft gave us a `#14121E`
+  crown, which is `Palette.surface` and therefore nearly invisible against our own
+  `#09080E` ground — checked at 48/72/140px. The icon puts the amber on the crown and
+  a warm white `#FFF3D6` in the core instead. If you re-export the logo, re-check it
+  on the ink plate at 48px before believing it.
+- **A stale `autolinking.json` can break a clean build with a package name that exists
+  nowhere.** On 2026-09-24 `compileDebugJavaWithJavac` failed with `package com.igris
+  does not exist` — and `com.igris` is in no source file, no commit, and no config.
+  It came from `android/build/generated/autolinking/autolinking.json`, an orphaned
+  artifact. `expo prebuild` deletes `android/app/build` but leaves `android/build`, so
+  Gradle regenerated `ReactNativeApplicationEntryPoint.java` from a config it thought
+  was up to date. Running `npx expo-modules-autolinking react-native-config --platform
+  android` by hand printed the correct `com.psahu.igris`, which is how the staleness
+  was proved. Fix: `rm -rf android/build/generated/autolinking
+  android/app/build/generated/autolinking` and rebuild — 17s.
+- **`expo prebuild` prints "Clearing android" even without `--clean`.** The warning
+  above says never to run `--clean` because it deletes hand-written Kotlin; be aware
+  plain prebuild clears too. Nothing has been lost yet only because the hand-written
+  services do not exist yet. Commit `android/` before every prebuild and read the diff.
+- **Never read a Gradle build's exit code through a pipe.** `./gradlew ... | tail -30`
+  reports `tail`'s status, so a failed build looks like a pass. Redirect to a log and
+  check `$?`, or set `-o pipefail`.
+- **Icon changes need a prebuild, not a reload.** Expo regenerates the Android mipmaps
+  during `expo prebuild -p android`; Metro will happily show you the old launcher icon
+  forever. Same class of trap as the `AndroidManifest.xml` one above.
 - Models go in `Paths.document`, never `Paths.cache`. Android purges the cache under
   storage pressure, and losing the 63MB voice looks like Igris going mute for no reason.
 - maestro's `/chat/stream` is **SSE** (`EventSourceResponse`). RN's `fetch` has no
@@ -213,6 +283,26 @@ released with no underruns. Download to speech took under 20s on 5G.
   height instead, which *does* fire under edge-to-edge. Reanimated's
   `useAnimatedKeyboard` is the other no-dependency option but is deprecated and seizes
   inset management app-wide, which fights safe-area-context.
+- **Phone actions go through our own native module, `modules/igris-device`** (Kotlin,
+  autolinked at Gradle time — no prebuild needed). maestro plans the action
+  (`maestro/agents/device.py`), `lib/maestro.ts` passes the `device_action` frame
+  through `parseDeviceAction`, `lib/device.ts` performs it, and the turn shows a chip
+  with the real outcome. **Not `Linking.sendIntent`**: RN puts every JS number extra as
+  a Double, and the Clock reads `EXTRA_HOUR` with `getIntExtra` — the hour silently
+  becomes 0. Measured on ColorOS: `SET_ALARM` + `SKIP_UI` works silently;
+  `DISMISS_ALARM` does nothing for upcoming or ringing alarms (it opens the list). A
+  ringing alarm's notification has Snooze/✕ actions — the notification-listener route.
+- **Calls never ring on maestro's word alone.** maestro sends only a name
+  (`{kind:'call', name}`); the phone resolves it in its own contacts. Non-favourites
+  stop at a confirm card (tap, or a typed/spoken "yes" when there is exactly one
+  candidate). Quick-call favourites (`lib/favourites.ts`, SecureStore
+  `igris.favourites`, managed at `/favourites`) ring after a `COUNTDOWN_MS` (3s)
+  cancellable countdown — and only when exactly ONE favourite matches the alias, full
+  name or first name. Keep both rules: STT mishears names, and a wrong auto-dial is
+  the one failure here that embarrasses the user in front of someone else.
+- Device actions need a maestro with `agents/device.py`. Until Render is redeployed,
+  alarms and calls work on the Mac lane only; the old Render maestro ignores
+  `capabilities` and sends "call mom" to the LLM.
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba
   path is maestro → `DHABA_AI_URL/agent/chat` → dhaba-ai → Bill-App.
 

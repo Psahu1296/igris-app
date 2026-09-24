@@ -1,17 +1,25 @@
 import * as Haptics from 'expo-haptics';
+import { Cloud, Pin, RefreshCw, Zap } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 
-import { Font, laneColor, Palette, Space, Type } from '@/constants/theme';
+import { PressableScale } from '@/components/pressable-scale';
+import { Font, laneColor, laneGlow, Palette, Space, Type } from '@/constants/theme';
 import type { Lane } from '@/lib/maestro';
 
 export function LaneBadge({
   lane,
   probing,
+  pinned = false,
+  reachable = true,
   onPress,
 }: {
   lane: Lane;
   probing: boolean;
+  /** The user chose this lane by hand; the probe is not allowed to change it. */
+  pinned?: boolean;
+  /** False when a pinned lane failed its health probe. */
+  reachable?: boolean;
   onPress: () => void;
 }) {
   const [pulse] = useState(() => new Animated.Value(1));
@@ -39,8 +47,16 @@ export function LaneBadge({
     return () => loop.stop();
   }, [probing, pulse, auraScale]);
 
-  const color = laneColor(lane);
-  const glow = lane === 'local' ? Palette.localGlow : Palette.cloudGlow;
+  // An unreachable pin is the one state worth shouting about: the user has told us
+  // to use a brain that is not answering, so every turn is about to fail.
+  const down = pinned && !reachable;
+  // The chip is coloured by the MODE, so Auto is recognisable at a glance; the icon
+  // inside still says which brain the probe actually landed on (Zap = Mac,
+  // Cloud = Render), so Auto never hides where your answers are coming from.
+  const tint = pinned ? lane : 'auto';
+  const color = down ? Palette.alert : laneColor(tint);
+  const glow = down ? Palette.alertGlow : laneGlow(tint);
+  const name = lane === 'local' ? 'the Mac' : 'Render';
 
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -48,16 +64,26 @@ export function LaneBadge({
   };
 
   return (
-    <Pressable
+    <PressableScale
       onPress={handlePress}
       hitSlop={12}
       accessibilityRole="button"
       accessibilityLabel={
-        lane === 'local'
-          ? 'Answering from the Mac. Tap to check again.'
-          : 'Answering from Render. Tap to check for the Mac.'
+        down
+          ? `Pinned to ${name}, which is not answering. Tap to choose a lane.`
+          : pinned
+            ? `Pinned to ${name}. Tap to choose a lane.`
+            : `Auto, answering from ${name}. Tap to choose a lane.`
       }
-      style={[styles.badge, { borderColor: color + '44', backgroundColor: Palette.surfaceLift }]}>
+      style={[
+        styles.badge,
+        {
+          // A pin draws a firmer edge, so an overridden lane never passes for Auto.
+          borderColor: color + (pinned ? '99' : '44'),
+          backgroundColor: Palette.surfaceLift,
+          shadowColor: color,
+        },
+      ]}>
       <View style={styles.dotContainer}>
         <Animated.View
           style={[
@@ -65,12 +91,21 @@ export function LaneBadge({
             { backgroundColor: glow, transform: [{ scale: auraScale }], opacity: pulse },
           ]}
         />
-        <Animated.View style={[styles.dot, { backgroundColor: color, opacity: pulse }]} />
+        <View style={styles.iconWrapper}>
+          {probing ? (
+            <RefreshCw size={11} color={color} />
+          ) : lane === 'local' ? (
+            <Zap size={11} color={color} />
+          ) : (
+            <Cloud size={11} color={color} />
+          )}
+        </View>
       </View>
       <Animated.Text style={[styles.label, { color }]}>
-        {lane === 'local' ? 'MAC AI' : 'RENDER AI'}
+        {pinned ? (lane === 'local' ? 'MAC' : 'RENDER') : 'AUTO'}
       </Animated.Text>
-    </Pressable>
+      {pinned ? <Pin size={9} color={color} /> : null}
+    </PressableScale>
   );
 }
 
@@ -78,33 +113,36 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Space.sm,
-    paddingHorizontal: Space.md,
-    paddingVertical: Space.xs + 2,
-    borderRadius: 14,
+    gap: Space.xs + 2,
+    paddingHorizontal: Space.sm + 2,
+    paddingVertical: Space.xs + 1,
+    borderRadius: 12,
     borderWidth: 1,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 2,
   },
   dotContainer: {
-    width: 10,
-    height: 10,
+    width: 14,
+    height: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   aura: {
     position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     fontFamily: Font.uiMedium,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     ...Type.micro,
+    fontSize: 10,
   },
 });
-

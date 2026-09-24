@@ -10,27 +10,21 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { laneColor, Palette } from '@/constants/theme';
-import type { Lane } from '@/lib/maestro';
+import { laneColor, laneGlow, Palette, type Tint } from '@/constants/theme';
 
 export type AiCoreMode = 'idle' | 'thinking' | 'speaking';
 
 export function AiCore({
-  lane,
+  tint,
   mode = 'idle',
   size = 72,
 }: {
-  lane: Lane;
+  tint: Tint;
   mode?: AiCoreMode;
   size?: number;
 }) {
-  const primaryColor = mode === 'thinking' ? Palette.thinking : laneColor(lane);
-  const glowColor =
-    mode === 'thinking'
-      ? Palette.thinkingGlow
-      : lane === 'local'
-        ? Palette.localGlow
-        : Palette.cloudGlow;
+  const primaryColor = mode === 'thinking' ? Palette.thinking : laneColor(tint);
+  const glowColor = mode === 'thinking' ? Palette.thinkingGlow : laneGlow(tint);
 
   // Shared values for animations
   const pulse = useSharedValue(0);
