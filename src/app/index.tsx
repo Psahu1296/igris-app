@@ -37,7 +37,7 @@ import {
   type DeviceStep,
 } from '@/lib/device';
 import { COUNTDOWN_MS, matchFavourite, useFavourites, type Favourite } from '@/lib/favourites';
-import { AuthError, streamChat, type Photo } from '@/lib/maestro';
+import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { readMessages, replyTargets, sendReply, speakable, stopAlarm } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
 import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
@@ -133,7 +133,9 @@ export default function Transcript() {
               device: null,
             });
           } else if (restored.length > 0) {
-            restored[restored.length - 1].answer = message.content;
+            const { text, drawn } = splitDrawn(message.content);
+            restored[restored.length - 1].answer = text;
+            restored[restored.length - 1].drawn = drawn;
           }
         }
         setTurns(restored);
@@ -406,6 +408,8 @@ export default function Transcript() {
                     patch({ device: { action, status: 'failed', detail: reason(err) } })
                   );
               }
+            } else if (event.kind === 'drawn') {
+              patch({ drawn: event.picture });
             } else if (event.kind === 'bill') {
               patch({ bill: event.card });
             } else if (event.kind === 'quiz') {

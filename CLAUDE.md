@@ -130,6 +130,16 @@ Consequences, in order of how much they will bite:
   prebuild was needed: the picker's own manifest brings the CAMERA permission and camera
   intent query through Gradle's manifest merge. Photos are not restored from history
   (the history keeps "[Photo] <question>").
+- **Igris draws pictures on the Mac** (added 2026-09-25): "draw a tiger" gets an `image`
+  SSE frame (`{name, prompt}`); `DrawnPicture` in turn.tsx loads `GET /images/{name}`
+  through expo-image with the bearer token (`drawnSource`). History rows end with an
+  `[image:<name>]` marker that `splitDrawn` removes and turns back into the picture. The
+  files live on the Mac, so on Render a reopened conversation says it cannot load them.
+  The download button on a picture (`SaveButton` → `lib/gallery.ts`) fetches it to the
+  cache with the token (expo-file-system) and saves it into an "Igris" album with
+  `expo-media-library/legacy` (write-only photo permission). A native module: a new APK.
+  A photo sent with "make this cartoon style" comes back edited (maestro decides; the
+  app just shows the `image` frame, same as a drawing).
 - **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
   on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
   does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were

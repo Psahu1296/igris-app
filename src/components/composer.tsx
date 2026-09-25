@@ -123,7 +123,7 @@ export function Composer({
             <ImagePlus size={16} color={accent} />
             <Text style={styles.pickText}>Gallery</Text>
           </PressableScale>
-          <Text style={styles.pickHint}>Ask about it, or say “scan this bill”.</Text>
+          <Text style={styles.pickHint}>Ask about it, “scan this bill”, or “make it cartoon style”.</Text>
         </View>
       ) : null}
 

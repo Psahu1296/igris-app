@@ -147,7 +147,9 @@ export type TurnEvent =
   /** A tutor question with options to tap. Arrives just before the answer. */
   | { kind: 'quiz'; card: QuizCard }
   /** A bill read from a photo (maestro vision.py). Arrives just before the answer. */
-  | { kind: 'bill'; card: BillCard };
+  | { kind: 'bill'; card: BillCard }
+  /** A picture Igris drew (maestro imagine.py). Arrives just before the answer. */
+  | { kind: 'drawn'; picture: Drawn };
 
 /** A multiple-choice question from the tutor (maestro tutor/session.py): tap to answer. */
 export type QuizCard = { kind: 'mcq'; question: string; options: string[] };
@@ -167,6 +169,27 @@ export type BillCard = {
   /** One of Bill-App's expense types (food_raw_material, utility_bill, …). */
   type: string;
 };
+
+/** A picture Igris drew: its file on the Mac's maestro (GET /images/{name}). */
+export type Drawn = { name: string; prompt: string };
+
+/** Where the history keeps which picture a turn drew (maestro main.py appends it). */
+const DRAWN_MARKER = /\n*\[image:([0-9a-f]{32}\.jpg)\]\s*$/;
+
+/** Split a saved answer into its words and the picture it drew, if any. */
+export function splitDrawn(answer: string): { text: string; drawn: Drawn | null } {
+  const match = DRAWN_MARKER.exec(answer);
+  if (!match) return { text: answer, drawn: null };
+  return { text: answer.slice(0, match.index), drawn: { name: match[1], prompt: '' } };
+}
+
+/**
+ * How to load a drawn picture: the URL and the bearer token it needs. Pictures live on
+ * the Mac, so a conversation reopened on Render cannot show them (a 404 there).
+ */
+export async function drawnSource(lane: Lane, name: string): Promise<{ uri: string; headers: Record<string, string> }> {
+  return { uri: `${urlFor(lane)}/images/${name}`, headers: { Authorization: `Bearer ${await tokenFor(lane)}` } };
+}
 
 /** A photo sent with a turn: base64 JPEG/PNG from the picker, and its URI to show. */
 export type Photo = { base64: string; uri: string };
@@ -271,6 +294,16 @@ export async function streamChat(opts: {
           if (Array.isArray(card.items)) onEvent({ kind: 'bill', card });
         } catch {
           // malformed: the bill is still in the spoken answer
+        }
+        continue;
+      }
+
+      if (frame.event === 'image') {
+        try {
+          const picture = JSON.parse(frame.data) as Drawn;
+          if (typeof picture.name === 'string') onEvent({ kind: 'drawn', picture });
+        } catch {
+          // malformed: the words still say what was drawn
         }
         continue;
       }
