@@ -120,6 +120,16 @@ Consequences, in order of how much they will bite:
   `SpeechRecognizer` (`PhoneRecognizer.kt`, en-IN, no new dependency; worse at "Igris"
   and Hinglish). Every mic problem is also a `ToastAndroid` — `problem` used to be set
   and read by nothing, so failures were silent.
+- **Photos go to the Mac** (added 2026-09-25). The composer's image button opens Camera or
+  Gallery (`lib/photo.ts`, `expo-image-picker`, JPEG at quality 0.7 with base64). A turn
+  with a photo is sent to maestro `/vision/stream` instead of `/chat/stream`
+  (`streamChat({ image })`); gemma4 answers, or reads a bill when the words say
+  bill/receipt/parchi and the turn gets a `BillFields` card laid out like Bill-App's Add
+  Expense form, with Copy. Nothing is saved to Bill-App. Off the local lane the button is
+  dimmed and says why in a toast; `ask` refuses a photo turn that ended up on Render. No
+  prebuild was needed: the picker's own manifest brings the CAMERA permission and camera
+  intent query through Gradle's manifest merge. Photos are not restored from history
+  (the history keeps "[Photo] <question>").
 - **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
   on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
   does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were

@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
-import { Loader2, Mic, Send, Square } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { Camera, ImagePlus, Loader2, Mic, Send, Square, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,7 +14,8 @@ import Animated, {
 import { AudioWave } from '@/components/audio-wave';
 import { PressableScale } from '@/components/pressable-scale';
 import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme';
-import type { Lane } from '@/lib/maestro';
+import type { Lane, Photo } from '@/lib/maestro';
+import { pickPhoto } from '@/lib/photo';
 import type { ListenState } from '@/lib/voice/use-listening';
 import { useSession } from '@/state/session';
 
@@ -33,15 +35,20 @@ export function Composer({
 }: {
   lane: Lane;
   busy: boolean;
-  onSend: (message: string) => void;
+  onSend: (message: string, photo?: Photo) => void;
   voice?: VoiceControls;
 }) {
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
+  // A photo waiting to go with the next message, and whether Camera/Gallery is open.
+  const [photo, setPhoto] = useState<Photo | null>(null);
+  const [picking, setPicking] = useState(false);
   const listening = voice?.state === 'listening';
   const transcribing = voice?.state === 'transcribing';
   const micBusy = listening || transcribing;
-  const ready = draft.trim().length > 0 && !busy;
+  const ready = (draft.trim().length > 0 || photo !== null) && !busy;
+  // Photos are read by gemma4 on the Mac; Render has no vision model (maestro vision.py).
+  const canSee = lane === 'local';
   // Accent follows the mode (Auto / pinned), not the lane — see Tint in theme.ts.
   const { lanePref } = useSession();
   const accent = laneColor(lanePref);
@@ -72,12 +79,70 @@ export function Composer({
   const send = () => {
     if (!ready) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSend(draft.trim());
+    onSend(draft.trim(), photo ?? undefined);
     setDraft('');
+    setPhoto(null);
+  };
+
+  const attach = () => {
+    if (!canSee) {
+      ToastAndroid.show('Photos need the Mac. Igris is on Render right now.', ToastAndroid.LONG);
+      return;
+    }
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPicking((open) => !open);
+  };
+
+  const choose = async (source: 'camera' | 'library') => {
+    setPicking(false);
+    try {
+      const picked = await pickPhoto(source);
+      if (picked) setPhoto(picked);
+    } catch (err) {
+      ToastAndroid.show(err instanceof Error ? err.message : 'Could not open the camera.', ToastAndroid.LONG);
+    }
   };
 
   return (
     <View style={styles.wrapper}>
+      {picking ? (
+        <View style={styles.pickRow}>
+          <PressableScale
+            onPress={() => void choose('camera')}
+            accessibilityRole="button"
+            accessibilityLabel="Take a photo"
+            style={[styles.pickChip, { borderColor: accent + '66' }]}>
+            <Camera size={16} color={accent} />
+            <Text style={styles.pickText}>Camera</Text>
+          </PressableScale>
+          <PressableScale
+            onPress={() => void choose('library')}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a photo or screenshot"
+            style={[styles.pickChip, { borderColor: accent + '66' }]}>
+            <ImagePlus size={16} color={accent} />
+            <Text style={styles.pickText}>Gallery</Text>
+          </PressableScale>
+          <Text style={styles.pickHint}>Ask about it, or say “scan this bill”.</Text>
+        </View>
+      ) : null}
+
+      {photo ? (
+        <View style={styles.photoRow}>
+          <Image source={{ uri: photo.uri }} style={styles.thumb} contentFit="cover" />
+          <PressableScale
+            onPress={() => setPhoto(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Remove the photo"
+            style={styles.thumbRemove}>
+            <X size={12} color={Palette.text} />
+          </PressableScale>
+          <Text style={styles.pickHint}>
+            {canSee ? 'Send as it is for “what’s this?”' : 'Photos need the Mac. Remove it to send.'}
+          </Text>
+        </View>
+      ) : null}
+
       <View
         style={[
           styles.container,
@@ -94,13 +159,30 @@ export function Composer({
           </View>
         ) : null}
 
+        {!micBusy ? (
+          <PressableScale
+            onPress={attach}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={canSee ? 'Attach a photo' : 'Photos need the Mac'}
+            style={[styles.attach, { opacity: canSee ? 1 : 0.4 }]}>
+            <ImagePlus size={20} color={picking || photo ? accent : Palette.muted} />
+          </PressableScale>
+        ) : null}
+
         <TextInput
           value={draft}
           onChangeText={setDraft}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={
-            listening ? 'Listening to voice…' : transcribing ? 'Transcribing audio…' : 'Ask Igris...'
+            listening
+              ? 'Listening to voice…'
+              : transcribing
+                ? 'Transcribing audio…'
+                : photo
+                  ? 'Ask about the photo…'
+                  : 'Ask Igris...'
           }
           placeholderTextColor={Palette.faint}
           style={styles.input}
@@ -243,6 +325,66 @@ const styles = StyleSheet.create({
   sendDisabled: {
     width: 40,
     paddingHorizontal: 0,
+  },
+  attach: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Space.sm,
+    paddingBottom: Space.sm,
+  },
+  pickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Space.md,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: Palette.surfaceLift,
+  },
+  pickText: {
+    color: Palette.text,
+    fontFamily: Font.ui,
+    fontSize: 14,
+  },
+  pickHint: {
+    flexShrink: 1,
+    color: Palette.faint,
+    fontFamily: Font.ui,
+    fontSize: 12,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+    paddingBottom: Space.sm,
+  },
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
+  thumbRemove: {
+    position: 'absolute',
+    left: 44,
+    top: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.surfaceLift,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
   },
   spinner: {
     transform: [{ rotate: '0deg' }],

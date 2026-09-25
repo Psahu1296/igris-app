@@ -37,7 +37,7 @@ import {
   type DeviceStep,
 } from '@/lib/device';
 import { COUNTDOWN_MS, matchFavourite, useFavourites, type Favourite } from '@/lib/favourites';
-import { AuthError, streamChat } from '@/lib/maestro';
+import { AuthError, streamChat, type Photo } from '@/lib/maestro';
 import { readMessages, replyTargets, sendReply, speakable, stopAlarm } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
 import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
@@ -261,7 +261,10 @@ export default function Transcript() {
   );
 
   const ask = useCallback(
-    async (message: string, extra?: { todoSession?: { todo_id: string; occurrence_at: string | null } }) => {
+    async (
+      message: string,
+      extra?: { todoSession?: { todo_id: string; occurrence_at: string | null }; photo?: Photo }
+    ) => {
       // A reply to a pending call card is answered here, on the phone — sending "yes"
       // to maestro would only get it classified as chit-chat. Only for a single
       // candidate: "yes" to a list of three Rahuls would be a guess.
@@ -269,13 +272,13 @@ export default function Transcript() {
         .reverse()
         .find((t) => t.device?.status === 'confirm' || t.device?.status === 'countdown');
       const step = pending?.device;
-      if (pending && step && YES.test(message.trim())) {
+      if (pending && step && !extra?.photo && YES.test(message.trim())) {
         if (step.action.kind === 'notify.reply' && step.conversations?.length === 1) {
           return void confirmReply(pending.id, step.conversations[0], step.action.text);
         }
         if (step.candidates?.length === 1) return void confirmCall(pending.id, step.candidates[0]);
       }
-      if (pending && NO.test(message.trim())) return cancelCall(pending.id);
+      if (pending && !extra?.photo && NO.test(message.trim())) return cancelCall(pending.id);
 
       // Auto on Render may be stale: one probe that caught the Mac mid-restart kept the
       // app on Render for the rest of the session, and Render's maestro lacks the Mac's
@@ -298,6 +301,7 @@ export default function Transcript() {
           lane: turnLane,
           elapsedMs: null,
           device: null,
+          photo: extra?.photo?.uri ?? null,
         },
       ]);
       setBusy(true);
@@ -307,6 +311,10 @@ export default function Transcript() {
         setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...change } : t)));
 
       try {
+        // The lane can change between attaching and sending (Auto, a sleeping Mac).
+        if (extra?.photo && turnLane !== 'local') {
+          throw new Error('Photos need the Mac, and Igris is on Render right now. Try again when the Mac is back.');
+        }
         let answered = false;
         // Set when the phone itself will speak this turn (reading messages aloud),
         // so maestro's "checking your messages" does not talk over it.
@@ -316,6 +324,7 @@ export default function Transcript() {
           message,
           sessionId,
           todoSession: extra?.todoSession,
+          image: extra?.photo?.base64,
           onEvent: (event) => {
             if (event.kind === 'answer') {
               answered = true;
@@ -397,6 +406,8 @@ export default function Transcript() {
                     patch({ device: { action, status: 'failed', detail: reason(err) } })
                   );
               }
+            } else if (event.kind === 'bill') {
+              patch({ bill: event.card });
             } else if (event.kind === 'quiz') {
               patch({ quiz: event.card });
             } else if (event.kind === 'todos') {
@@ -542,7 +553,7 @@ export default function Transcript() {
         <Composer
           lane={lane}
           busy={busy}
-          onSend={(m) => void ask(m)}
+          onSend={(m, photo) => void ask(m, photo ? { photo } : undefined)}
           voice={{
             available: listening.available,
             state: listening.state,

@@ -145,10 +145,31 @@ export type TurnEvent =
   /** The turn changed the todo list; the phone re-syncs its alarms (lib/todos.ts). */
   | { kind: 'todos' }
   /** A tutor question with options to tap. Arrives just before the answer. */
-  | { kind: 'quiz'; card: QuizCard };
+  | { kind: 'quiz'; card: QuizCard }
+  /** A bill read from a photo (maestro vision.py). Arrives just before the answer. */
+  | { kind: 'bill'; card: BillCard };
 
 /** A multiple-choice question from the tutor (maestro tutor/session.py): tap to answer. */
 export type QuizCard = { kind: 'mcq'; question: string; options: string[] };
+
+/**
+ * A bill or receipt as maestro's vision.normalize_bill reads it. Nothing is saved:
+ * the card is for checking it and entering it in Bill-App by hand.
+ */
+export type BillCard = {
+  vendor: string | null;
+  date: string | null;
+  items: { name: string; quantity: number | null; unit: string | null; amount: number | null }[];
+  total: number | null;
+  items_total: number | null;
+  /** The lines do not add up to the printed total. */
+  mismatch: boolean;
+  /** One of Bill-App's expense types (food_raw_material, utility_bill, …). */
+  type: string;
+};
+
+/** A photo sent with a turn: base64 JPEG/PNG from the picker, and its URI to show. */
+export type Photo = { base64: string; uri: string };
 
 /** Unknown event names fall back to thinking, so a new maestro event can't stall the UI. */
 const phaseOf = (event: string): Phase => (event === 'agent_started' ? 'working' : 'thinking');
@@ -168,25 +189,35 @@ export async function streamChat(opts: {
   sessionId: string;
   /** Set when this message starts a todo's tutor session (the alarm's Start). */
   todoSession?: { todo_id: string; occurrence_at: string | null };
+  /**
+   * A photo for Igris to look at. The turn then goes to /vision/stream (Ollama gemma4
+   * on the Mac) instead of the graph — the same frames come back, so nothing else
+   * changes. Render has no vision model; the caller keeps photos on the local lane.
+   */
+  image?: string;
   onEvent: (event: TurnEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, sessionId, todoSession, onEvent, signal } = opts;
+  const { lane, message, sessionId, todoSession, image, onEvent, signal } = opts;
 
   const run = async (token: string) => {
-    const res = await streamFetch(`${urlFor(lane)}/chat/stream`, {
+    const res = await streamFetch(`${urlFor(lane)}${image ? '/vision/stream' : '/chat/stream'}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        message,
-        session_id: sessionId,
-        capabilities: DEVICE_CAPABILITIES,
-        todo_session: todoSession ?? null,
-      }),
+      body: JSON.stringify(
+        image
+          ? { image, message, session_id: sessionId }
+          : {
+              message,
+              session_id: sessionId,
+              capabilities: DEVICE_CAPABILITIES,
+              todo_session: todoSession ?? null,
+            }
+      ),
       signal,
     });
     return res;
@@ -205,6 +236,11 @@ export async function streamChat(opts: {
     res = await run(await login(lane, creds.username, creds.password));
   }
 
+  if (image && res.status === 404) throw new Error('This maestro cannot see photos yet. Update it.');
+  if (image && res.status === 422) {
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new Error(typeof body?.detail === 'string' ? body.detail : 'maestro could not read that photo.');
+  }
   if (!res.ok) throw new Error(`Igris returned ${res.status}.`);
   if (!res.body) throw new Error('Igris sent no response body.');
 
@@ -225,6 +261,16 @@ export async function streamChat(opts: {
           if (card.kind === 'mcq' && Array.isArray(card.options)) onEvent({ kind: 'quiz', card });
         } catch {
           // malformed: the question is still in the spoken answer
+        }
+        continue;
+      }
+
+      if (frame.event === 'bill_card') {
+        try {
+          const card = JSON.parse(frame.data) as BillCard;
+          if (Array.isArray(card.items)) onEvent({ kind: 'bill', card });
+        } catch {
+          // malformed: the bill is still in the spoken answer
         }
         continue;
       }

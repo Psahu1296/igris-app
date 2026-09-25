@@ -1,5 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import {
   AlarmClock,
   AlertCircle,
@@ -8,6 +9,7 @@ import {
   Copy,
   MessageSquare,
   Phone,
+  Receipt,
   Send,
   Star,
   User,
@@ -32,7 +34,7 @@ import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
 import { describeAction, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { isFavourite, toggleFavourite, useFavourites } from '@/lib/favourites';
-import type { Lane, Phase, QuizCard } from '@/lib/maestro';
+import type { BillCard, Lane, Phase, QuizCard } from '@/lib/maestro';
 import { useSpeakingId, useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
@@ -51,6 +53,10 @@ export type TurnState = {
   device: DeviceStep | null;
   /** A tutor multiple-choice question asked in this turn. */
   quiz?: QuizCard | null;
+  /** The photo sent with this ask (a local URI). Not restored from history. */
+  photo?: string | null;
+  /** A bill Igris read from that photo. */
+  bill?: BillCard | null;
 };
 
 export function Turn({
@@ -111,7 +117,10 @@ export function Turn({
             </View>
             <Text style={[styles.userBadgeText, { color: theme }]}>YOU</Text>
           </View>
-          <Text style={styles.askText}>{turn.ask}</Text>
+          {turn.photo ? (
+            <Image source={{ uri: turn.photo }} style={styles.askPhoto} contentFit="cover" />
+          ) : null}
+          {turn.ask || !turn.photo ? <Text style={styles.askText}>{turn.ask}</Text> : null}
         </View>
       </View>
 
@@ -190,6 +199,8 @@ export function Turn({
           ) : turn.device ? (
             <DeviceChip step={turn.device} accent={accent} />
           ) : null}
+
+          {turn.bill ? <BillFields bill={turn.bill} accent={accent} /> : null}
 
           {turn.quiz ? <QuizOptions card={turn.quiz} accent={accent} onAnswer={onAnswer} /> : null}
 
@@ -512,6 +523,63 @@ function QuizOptions({
   );
 }
 
+const rupees = (amount: number | null) =>
+  amount === null ? '?' : `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+/**
+ * A read bill laid out as Bill-App's Add Expense form asks for it (type, name,
+ * amount, date, description), so entering it by hand is copying down four lines.
+ * Nothing here is saved; Copy puts the same lines on the clipboard.
+ */
+function BillFields({ bill, accent }: { bill: BillCard; accent: string }) {
+  const [copied, setCopied] = useState(false);
+  const description = bill.items
+    .map((i) => (i.quantity !== null ? `${i.name} ${i.quantity}${i.unit ? ' ' + i.unit : ''}` : i.name))
+    .join(', ');
+  const fields: [string, string][] = [
+    ['Type', bill.type],
+    ['Name', bill.vendor ?? '—'],
+    ['Amount', rupees(bill.total)],
+    ['Date', bill.date ?? 'not printed'],
+    ['Description', description || '—'],
+  ];
+
+  const copy = async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await Clipboard.setStringAsync(fields.map(([k, v]) => `${k}: ${v}`).join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <View style={[styles.callCard, { borderColor: accent + '44', backgroundColor: accent + '0C' }]}>
+      <View style={styles.chatHead}>
+        <Receipt size={13} color={accent} />
+        <Text style={styles.chatTitle}>For Bill-App</Text>
+        <PressableScale onPress={() => void copy()} accessibilityRole="button" accessibilityLabel="Copy the expense">
+          <Meta style={{ color: accent }}>{copied ? 'Copied' : 'Copy'}</Meta>
+        </PressableScale>
+      </View>
+      {fields.map(([label, value]) => (
+        <View key={label} style={styles.billRow}>
+          <Meta style={styles.billLabel}>{label}</Meta>
+          <Text style={styles.billValue} numberOfLines={label === 'Description' ? 3 : 1}>
+            {value}
+          </Text>
+        </View>
+      ))}
+      {bill.mismatch ? (
+        <View style={styles.billRow}>
+          <AlertCircle size={13} color={Palette.alert} />
+          <Meta style={styles.billWarn}>
+            {`The lines add up to ${rupees(bill.items_total)}, not ${rupees(bill.total)}. Check the bill.`}
+          </Meta>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 /** What was read aloud, to glance at instead of listening. Newest chat first. */
 function MessagesCard({ conversations, accent }: { conversations: Conversation[]; accent: string }) {
   return (
@@ -582,6 +650,16 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.8,
   },
+  askPhoto: {
+    width: 180,
+    height: 180,
+    borderRadius: 12,
+    marginBottom: Space.xs,
+  },
+  billRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Space.sm },
+  billLabel: { width: 84, color: Palette.muted },
+  billValue: { flex: 1, color: Palette.text, fontFamily: Font.ui, fontSize: 14 },
+  billWarn: { flex: 1, color: Palette.muted },
   askText: {
     fontFamily: Font.ui,
     color: Palette.text,
