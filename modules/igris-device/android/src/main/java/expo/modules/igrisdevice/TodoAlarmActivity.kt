@@ -10,6 +10,8 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.WindowManager
@@ -32,18 +34,38 @@ import org.json.JSONObject
  */
 class TodoAlarmActivity : Activity() {
   private lateinit var firing: JSONObject
+  private val main = Handler(Looper.getMainLooper())
+  private val giveUp = Runnable { finish() }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     firing = intent.getStringExtra(TodoAlarms.EXTRA_FIRING)?.let { JSONObject(it) } ?: return finish()
     showOverLockScreen()
     setContentView(layout())
+    closeLater()
+  }
+
+  /**
+   * Left alone, the screen closes after UNATTENDED_MS and the phone may sleep again;
+   * the notification (and its re-poke) is still there. It used to hold
+   * FLAG_KEEP_SCREEN_ON until tapped: an ignored 10pm must-do kept the screen lit all
+   * night, and re-pokes woke it every 10 minutes — the battery hit 0 (2026-09-25).
+   */
+  private fun closeLater() {
+    main.removeCallbacks(giveUp)
+    main.postDelayed(giveUp, UNATTENDED_MS)
+  }
+
+  override fun onDestroy() {
+    main.removeCallbacks(giveUp)
+    super.onDestroy()
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     firing = intent.getStringExtra(TodoAlarms.EXTRA_FIRING)?.let { JSONObject(it) } ?: return
     setContentView(layout())
+    closeLater()
   }
 
   private fun showOverLockScreen() {
@@ -78,8 +100,14 @@ class TodoAlarmActivity : Activity() {
       root.addView(text(it, 15f, ACCENT, top = 16))
     }
     val done = if (firing.optBoolean("done_on_ack")) "Got it" else "Done"
-    if (session != null) root.addView(button("Start session", primary = true, top = 40) { start() })
-    else root.addView(button(done, primary = true, top = 40) { act(TodoAlarms.ACTION_DONE) })
+    if (session != null) {
+      root.addView(button("Start session", primary = true, top = 40) { start() })
+      // A way out that needs no maestro: with the backend down, a session could not
+      // start or report itself finished, so the slot nagged on (2026-09-25).
+      root.addView(button("Already done", primary = false, top = 12) { act(TodoAlarms.ACTION_DONE) })
+    } else {
+      root.addView(button(done, primary = true, top = 40) { act(TodoAlarms.ACTION_DONE) })
+    }
     if (firing.optBoolean("can_skip")) {
       root.addView(button("Skip to next slot", primary = false, top = 12) { act(TodoAlarms.ACTION_SKIP) })
     }
@@ -111,7 +139,21 @@ class TodoAlarmActivity : Activity() {
       .appendQueryParameter("title", firing.getString("title"))
       .appendQueryParameter("brief", session?.optString("brief") ?: firing.getString("title"))
       .build()
-    startActivity(Intent(Intent.ACTION_VIEW, link).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    val open = Intent(Intent.ACTION_VIEW, link).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && keyguard?.isKeyguardLocked == true) {
+      // This screen shows over the lock screen; the chat does not. Opened straight away,
+      // it started behind the keyguard — Igris could be heard teaching and not seen
+      // (2026-09-24). So unlock first (fingerprint / PIN), then open it.
+      keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+        override fun onDismissSucceeded() {
+          startActivity(open)
+          finish()
+        }
+      })
+      return
+    }
+    startActivity(open)
     finish()
   }
 
@@ -147,6 +189,8 @@ class TodoAlarmActivity : Activity() {
   ).toInt()
 
   companion object {
+    private const val UNATTENDED_MS = 60_000L
+
     // The app's own palette (src/constants/theme.ts): ground, alert, muted.
     private val GROUND = Color.parseColor("#09080E")
     private val ACCENT = Color.parseColor("#FF5555")

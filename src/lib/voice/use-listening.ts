@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
-import { PermissionsAndroid } from 'react-native';
+import { PermissionsAndroid, ToastAndroid } from 'react-native';
 
 import type { Lane } from '@/lib/config';
-import { getListener, type Listener } from '@/lib/voice/stt';
+import { getListener, phoneCanListen, type Listener } from '@/lib/voice/stt';
 
 /**
  * Listening, for screens that want to be talked to.
@@ -10,24 +10,30 @@ import { getListener, type Listener } from '@/lib/voice/stt';
  * Unlike speech, listening is never a courtesy: the user pressed a button and is now
  * talking at a phone, so silence has to be explained. Failures surface.
  *
- * There is no model to download and no readiness check, because the phone does not
- * transcribe — see stt.ts. What it does need is the Mac: transcription goes to
- * maestro's /stt, which Render does not have.
+ * Transcription prefers the Mac (maestro's /stt, Whisper — Render has none). When the
+ * Mac cannot be reached, the phone's own recogniser takes over, and a toast says so:
+ * the mic used to just vanish off the composer on the cloud lane, and failures were
+ * kept in `problem` with nothing on screen reading it (2026-09-25).
  */
 
 export type ListenState = 'idle' | 'listening' | 'transcribing';
 
-export function useListening(lane: Lane) {
+export function useListening(lane: Lane, macReachable: boolean) {
   const [state, setState] = useState<ListenState>('idle');
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblemState] = useState<string | null>(null);
+  // Every problem is also a toast: the user pressed the mic and is looking at it.
+  const setProblem = useCallback((message: string | null) => {
+    setProblemState(message);
+    if (message) ToastAndroid.show(message, ToastAndroid.LONG);
+  }, []);
+  const toldFallback = useRef(false);
   // Held in a ref so a re-render mid-utterance cannot swap the callback out from
   // under the native audio thread.
   const onDone = useRef<((text: string) => void) | null>(null);
   const active = useRef<Listener | null>(null);
 
-  // Only the Mac has Whisper. Offering a mic that always fails on Render would be
-  // worse than not offering one.
-  const available = lane === 'local';
+  const onMac = lane === 'local' && macReachable;
+  const available = onMac || phoneCanListen();
 
   const stop = useCallback(async () => {
     setState('idle');
@@ -39,7 +45,7 @@ export function useListening(lane: Lane) {
   const start = useCallback(
     async (onTranscript: (text: string) => void) => {
       if (!available) {
-        setProblem('Transcription needs the Mac. Igris is on Render right now.');
+        setProblem("The Mac is offline and this phone has no speech recogniser. Type instead.");
         return;
       }
 
@@ -54,7 +60,11 @@ export function useListening(lane: Lane) {
       setProblem(null);
       onDone.current = onTranscript;
 
-      const listener = getListener(lane);
+      if (!onMac && !toldFallback.current) {
+        toldFallback.current = true;
+        ToastAndroid.show("Mac offline: using the phone's speech recognition.", ToastAndroid.SHORT);
+      }
+      const listener = getListener(lane, macReachable);
       active.current = listener;
 
       try {
@@ -78,7 +88,7 @@ export function useListening(lane: Lane) {
         setProblem(err instanceof Error ? err.message : 'Igris could not start listening.');
       }
     },
-    [available, lane]
+    [available, lane, macReachable, onMac, setProblem]
   );
 
   return { available, state, problem, start, stop };

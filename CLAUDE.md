@@ -113,9 +113,13 @@ Consequences, in order of how much they will bite:
   expectation. **Speech goes to maestro's `/stt`** (added 2026-09-23), which runs
   faster-whisper with a domain prompt that knows "Igris" and "dhaba". Measured: whisper
   `small` transcribes in ~1.5s and gets proper nouns right.
-- **So the mic needs the Mac.** Render has no Whisper, so `useListening` offers the mic
-  only on the local lane and says so on Render rather than failing at the end of an
-  utterance.
+- **Whisper on the Mac first, the phone's recogniser as the fallback** (changed
+  2026-09-25). Render has no Whisper, and the mic used to be hidden off the local lane —
+  with maestro down on the Mac, voice just vanished. Now `useListening(lane,
+  macReachable)` uses the Mac when it can reach it and otherwise Android's own
+  `SpeechRecognizer` (`PhoneRecognizer.kt`, en-IN, no new dependency; worse at "Igris"
+  and Hinglish). Every mic problem is also a `ToastAndroid` — `problem` used to be set
+  and read by nothing, so failures were silent.
 - **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
   on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
   does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were
@@ -327,7 +331,9 @@ released with no underruns. Download to speech took under 20s on 5G.
   phone pulls `GET /todos/schedule` (a week of firings) and arms native exact alarms —
   on launch, on every foreground (via the lane re-probe), after a `todos_changed` SSE
   frame, and after edits on `/todos`. A copy is kept in SharedPreferences so the boot
-  receiver can re-arm. Normal priority = a silent notification; high/must =
+  receiver can re-arm. Normal priority = a pop-up notification with one sound
+  (channel `todo_notify`; the first, silent `todo_quiet` was filed by ColorOS under
+  "silent notifications" and went unseen); high/must =
   `setAlarmClock` + a full-screen overlay (native, so it shows over the lock screen in
   the second it fires) with a looping sound (`FLAG_INSISTENT`) and re-pokes (high once
   after 30 min, must every 15). Done/Snooze/Start happen natively, usually with the app
@@ -342,6 +348,21 @@ released with no underruns. Download to speech took under 20s on 5G.
   thread, and maestro's tutor runs the session; multiple-choice questions arrive as a
   `tutor_card` SSE frame and render as tappable options (`turn.tsx` `QuizOptions`) that
   send the letter as the next message. `/todos` shows weak topics (`lib/tutor.ts`).
+  Tapping a todo opens `components/todo-editor.tsx` (title, priority, once/repeats/
+  anytime — chips and steppers, no picker library) → `PATCH /todos/{id}`, then re-arms.
+  **Battery (2026-09-25):** an ignored must-do drained the phone to 0 overnight — the
+  alarm screen held `FLAG_KEEP_SCREEN_ON` until tapped and re-pokes woke it every 10
+  min. It now closes itself after 60s, the looping sound stops after 2 min, and
+  session todos have Done on both the screen and the notification, so a slot can be
+  closed with maestro down (the outbox sends it later).
+- **Answers render as Markdown** (`lib/markdown.ts` parser, `components/markdown.tsx`,
+  added 2026-09-24): headings, lists, task lists, quotes, code, tables, rules, and
+  diagrams — ```` ```flow ```` chains ("A → B → C") drawn natively, ```` ```mermaid ````
+  drawn by mermaid in a WebView (`components/mermaid.tsx`, `react-native-webview`,
+  mermaid@11 from jsDelivr, `securityLevel: 'strict'` because the text is model-written).
+  Hand-written parser, no Markdown library: the same blocks are also turned back into
+  sentences for speech (`toSpeech`, applied first in `tts.ts`), so nobody hears
+  asterisks and a table is read row by row. Plain text renders as before.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

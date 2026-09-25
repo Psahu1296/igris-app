@@ -1,3 +1,4 @@
+import IgrisDevice from '../../../modules/igris-device';
 import { createPcmLiveStream } from 'react-native-sherpa-onnx/audio';
 
 import type { Lane } from '@/lib/config';
@@ -154,6 +155,52 @@ class RemoteListener implements Listener {
   }
 }
 
-export function getListener(lane: Lane): Listener {
-  return new RemoteListener(lane);
+/**
+ * The phone's own recogniser (Google's, through modules/igris-device PhoneRecognizer),
+ * for when the Mac is not reachable. Worse at "Igris" and Hinglish than Whisper with
+ * its domain prompt, but with maestro only on Render the alternative was no mic at
+ * all (2026-09-25). It ends the utterance on its own silence detection.
+ */
+class PhoneListener implements Listener {
+  readonly provider = "the phone's speech recogniser";
+  private live = false;
+
+  async start(handlers: ListenHandlers): Promise<void> {
+    if (!IgrisDevice) throw new Error('This build has no phone recogniser. Rebuild the app.');
+    this.live = true;
+    // Not awaited: start() resolves once listening has begun, as RemoteListener's does.
+    IgrisDevice.recognize('en-IN')
+      .then((text) => {
+        if (this.live) handlers.onFinal(text.trim());
+      })
+      .catch((err: unknown) => {
+        if (!this.live) return;
+        handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
+        handlers.onFinal('');
+      })
+      .finally(() => {
+        this.live = false;
+      });
+  }
+
+  /** Cancels, like RemoteListener.stop: whatever was heard is dropped, not sent. */
+  async stop(): Promise<void> {
+    if (!this.live) return;
+    this.live = false;
+    IgrisDevice?.stopRecognizing();
+  }
+}
+
+/** Can the phone recognise speech by itself? (Needs the rebuilt APK and Google's recogniser.) */
+export function phoneCanListen(): boolean {
+  try {
+    return IgrisDevice?.canRecognize() ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/** Whisper on the Mac when it can be reached; otherwise the phone's own recogniser. */
+export function getListener(lane: Lane, macReachable: boolean): Listener {
+  return lane === 'local' && macReachable ? new RemoteListener(lane) : new PhoneListener();
 }

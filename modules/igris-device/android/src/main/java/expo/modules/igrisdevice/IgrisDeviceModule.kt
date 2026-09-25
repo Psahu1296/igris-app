@@ -50,12 +50,19 @@ private const val MAX_MATCHES = 12
  */
 class IgrisDeviceModule : Module() {
   private var hindi: HindiVoice? = null
+  private var ears: PhoneRecognizer? = null
+
+  private fun ears(): PhoneRecognizer {
+    val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+    return ears ?: PhoneRecognizer(context.applicationContext).also { ears = it }
+  }
 
   override fun definition() = ModuleDefinition {
     Name("IgrisDevice")
 
     OnDestroy {
       hindi?.shutdown()
+      ears?.shutdown()
     }
 
     // ── Hindi speech (HindiVoice.kt) ─────────────────────────────────────────────
@@ -68,6 +75,21 @@ class IgrisDeviceModule : Module() {
 
     Function("stopHindi") {
       hindi?.stop()
+    }
+
+    // ── The phone's speech recogniser (PhoneRecognizer.kt) ──────────────────────
+    // The fallback when the Mac's Whisper is not reachable. Resolves with one
+    // utterance's transcript, "" for silence.
+    AsyncFunction("recognize") { language: String, promise: Promise ->
+      ears().listen(language, promise)
+    }
+
+    Function("stopRecognizing") {
+      ears?.stop()
+    }
+
+    Function("canRecognize") {
+      ears().available()
     }
 
     // SKIP_UI: the clock sets it without showing its own screen, so Igris stays in
@@ -154,6 +176,8 @@ class IgrisDeviceModule : Module() {
         "fullScreen" to (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()),
         "exactAlarms" to (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
           context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()),
+        // Opens the alarm screen while the phone is in use (TodoAlarmReceiver.fire).
+        "overlay" to Settings.canDrawOverlays(context),
       )
     }
 
@@ -165,6 +189,7 @@ class IgrisDeviceModule : Module() {
           Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)
         which == "exactAlarms" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
           Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)
+        which == "overlay" -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkg)
         else -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
           .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
       }

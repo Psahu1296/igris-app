@@ -6,10 +6,8 @@ import {
   CloudSun,
   Copy,
   CreditCard,
-  ListTodo,
   LogOut,
-  MessageSquare,
-  Mic,
+  Menu,
   Plus,
   TrendingUp,
 } from 'lucide-react-native';
@@ -25,6 +23,7 @@ import { LaneBadge } from '@/components/lane-badge';
 import { LaneMenu } from '@/components/lane-menu';
 import { PressableScale } from '@/components/pressable-scale';
 import { Sessions } from '@/components/sessions';
+import { SideDrawer } from '@/components/side-drawer';
 import { Turn, type TurnState } from '@/components/turn';
 import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space, Type, type Tint } from '@/constants/theme';
@@ -78,13 +77,14 @@ export default function Transcript() {
     startSession,
   } = useSession();
   const [laneMenuOpen, setLaneMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [copiedChat, setCopiedChat] = useState(false);
   const speech = useSpeech();
   const [turns, setTurns] = useState<TurnState[]>([]);
   const [busy, setBusy] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
-  const listening = useListening(lane);
+  const listening = useListening(lane, laneReachable);
   const [browsing, setBrowsing] = useState(false);
 
   // Which lane to read history from, without making the lane a reason to reload it.
@@ -458,8 +458,17 @@ export default function Transcript() {
         {/* Modern Glass Header Bar */}
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            {/* The sigil replaces the old status dot: it carries the same lane colour,
-                cast in that lane's metal, and it is the thing the splash just drew. */}
+            <PressableScale
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setDrawerOpen(true);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Open menu"
+              style={styles.headerIconButton}>
+              <Menu size={16} color={Palette.text} />
+            </PressableScale>
             <IgrisMark size={22} tint={lanePref} />
             <Title style={styles.headerTitle}>Igris</Title>
           </View>
@@ -487,44 +496,6 @@ export default function Transcript() {
                 )}
               </PressableScale>
             ) : null}
-
-            <PressableScale
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/todos');
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Todos"
-              style={styles.headerIconButton}>
-              <ListTodo size={14} color={Palette.text} />
-            </PressableScale>
-
-            <PressableScale
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setBrowsing(true);
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Conversations"
-              style={styles.headerPill}>
-              <MessageSquare size={13} color={Palette.text} />
-              <Meta style={styles.headerPillText}>Chats</Meta>
-            </PressableScale>
-
-            <PressableScale
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/voice');
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Voice Mode"
-              style={styles.headerPill}>
-              <Mic size={13} color={Palette.text} />
-              <Meta style={styles.headerPillText}>Voice</Meta>
-            </PressableScale>
 
             <LaneBadge
               lane={lane}
@@ -594,6 +565,21 @@ export default function Transcript() {
           void startSession();
         }}
         onClose={() => setBrowsing(false)}
+      />
+
+      <SideDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onOpenVoice={() => router.push('/voice')}
+        onOpenChats={() => setBrowsing(true)}
+        onOpenTodos={() => router.push('/todos')}
+        onOpenFavourites={() => router.push('/favourites')}
+        onNewConversation={() => void startSession()}
+        onSignOut={() => void signOut()}
+        lane={lane}
+        lanePref={lanePref}
+        reachable={laneReachable}
+        onOpenLaneMenu={() => setLaneMenuOpen(true)}
       />
 
       <LaneMenu
@@ -830,18 +816,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
-  headerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Space.xs,
-    paddingHorizontal: Space.sm + 2,
-    paddingVertical: Space.xs + 1,
-    borderRadius: 12,
-    backgroundColor: Palette.surfaceGlass,
-    borderWidth: 1,
-    borderColor: Palette.hairline,
-  },
-  headerPillText: { color: Palette.text, fontFamily: Font.uiMedium, fontSize: 11 },
   headerIconButton: {
     width: 30,
     height: 30,

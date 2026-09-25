@@ -35,7 +35,12 @@ export type NativeNotification = {
 };
 
 /** A permission the todo alarms need, by what is missing without it. */
-export type TodoAlarmAccess = { notifications: boolean; fullScreen: boolean; exactAlarms: boolean };
+export type TodoAlarmAccess = {
+  notifications: boolean;
+  fullScreen: boolean;
+  exactAlarms: boolean;
+  overlay: boolean;
+};
 
 type IgrisDeviceModule = {
   setAlarm(hour: number, minute: number, label: string | null): void;
@@ -46,6 +51,11 @@ type IgrisDeviceModule = {
   /** Google TTS's offline Hindi voice; resolves when finished or stopped. */
   speakHindi(text: string): Promise<void>;
   stopHindi(): void;
+  /** One utterance through the phone's own recogniser; "" when nothing was said. */
+  recognize(language: string): Promise<string>;
+  /** Ends listening early; what was heard is still resolved. */
+  stopRecognizing(): void;
+  canRecognize(): boolean;
   hasNotificationAccess(): boolean;
   openNotificationAccess(): void;
   getNotifications(): Promise<NativeNotification[]>;

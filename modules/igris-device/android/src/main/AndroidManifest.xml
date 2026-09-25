@@ -29,6 +29,10 @@
     <intent>
       <action android:name="android.intent.action.SHOW_ALARMS" />
     </intent>
+    <!-- The phone's speech recogniser, when the Mac is away (PhoneRecognizer.kt). -->
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
     <!-- Binding Google TTS for the Hindi voice (HindiVoice.kt). -->
     <intent>
       <action android:name="android.intent.action.TTS_SERVICE" />

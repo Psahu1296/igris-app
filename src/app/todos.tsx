@@ -6,6 +6,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PressableScale } from '@/components/pressable-scale';
+import { TodoEditor } from '@/components/todo-editor';
 import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space } from '@/constants/theme';
 import {
@@ -18,8 +19,10 @@ import {
   listTodos,
   openAlarmSettings,
   syncTodos,
+  updateTodo,
   type Progress,
   type Todo,
+  type TodoEdit,
 } from '@/lib/todos';
 import { tutorProgress, type TutorProgress } from '@/lib/tutor';
 import type { TodoAlarmAccess } from '../../modules/igris-device';
@@ -27,8 +30,8 @@ import { useSession } from '@/state/session';
 
 /**
  * The list, for glancing and quick fixes. Adding is done by talking to Igris ("remind
- * me at 7 to call the CA"), so there is no form here on purpose — the parser and its
- * read-back live in maestro, and a second way in would need both again.
+ * me at 7 to call the CA"), so there is no add form here on purpose — the parser and
+ * its read-back live in maestro. Tapping a todo edits it (components/todo-editor.tsx).
  */
 export default function Todos() {
   const { lane, lanePref } = useSession();
@@ -38,6 +41,7 @@ export default function Todos() {
   const [refreshing, setRefreshing] = useState(false);
   const [access, setAccess] = useState<TodoAlarmAccess | null>(null);
   const [tutor, setTutor] = useState<TutorProgress | null>(null);
+  const [editing, setEditing] = useState<Todo | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +75,17 @@ export default function Todos() {
       setTodos(before);
       setError(err instanceof Error ? err.message : 'That did not go through.');
     }
+  };
+
+  // The sheet shows maestro's refusal itself, so errors are thrown back to it.
+  const saveEdit = async (todo: Todo, edit: TodoEdit) => {
+    const saved = await updateTodo(lane, todo, edit);
+    setTodos((prev) => prev?.map((t) => (t.id === saved.id ? { ...t, ...saved } : t)) ?? prev);
+    setEditing(null);
+    // New times mean new alarms: re-arm now, not at the next launch.
+    await Promise.all([load(), syncTodos(lane)]).catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : 'Saved, but the alarms did not re-arm yet.')
+    );
   };
 
   const sections = group(todos ?? []);
@@ -142,11 +157,20 @@ export default function Todos() {
           <View key={title} style={styles.section}>
             <Meta style={styles.sectionTitle}>{title}</Meta>
             {items.map((todo) => (
-              <Row key={todo.id} todo={todo} accent={accent} onDone={() => void act(todo, 'done')} onDelete={() => void act(todo, 'delete')} />
+              <Row
+                key={todo.id}
+                todo={todo}
+                accent={accent}
+                onDone={() => void act(todo, 'done')}
+                onEdit={() => setEditing(todo)}
+                onDelete={() => void act(todo, 'delete')}
+              />
             ))}
           </View>
         ))}
       </ScrollView>
+
+      <TodoEditor todo={editing} accent={accent} onClose={() => setEditing(null)} onSave={saveEdit} />
     </SafeAreaView>
   );
 }
@@ -155,6 +179,10 @@ const ACCESS: Record<keyof TodoAlarmAccess, { title: string; text: string }> = {
   notifications: { title: 'Notifications are off', text: 'Todos cannot poke you at all.' },
   fullScreen: { title: 'Alarm screen not allowed', text: 'Must-do todos cannot take over the lock screen.' },
   exactAlarms: { title: 'Exact alarms not allowed', text: 'Todos may ring minutes late.' },
+  overlay: {
+    title: 'Display over other apps is off',
+    text: 'While you use the phone, alarms only ring — the alarm screen cannot open.',
+  },
 };
 
 function group(todos: Todo[]): [string, Todo[]][] {
@@ -220,11 +248,13 @@ function Row({
   todo,
   accent,
   onDone,
+  onEdit,
   onDelete,
 }: {
   todo: Todo;
   accent: string;
   onDone: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const overdue = !todo.recurrence && todo.due_at !== null && new Date(todo.due_at) < new Date();
@@ -250,7 +280,11 @@ function Row({
         accessibilityLabel={todo.recurrence ? `Done for this slot: ${todo.title}` : `Done: ${todo.title}`}>
         <Circle size={22} color={todo.priority === 'must' ? Palette.alert : accent} />
       </PressableScale>
-      <View style={styles.who}>
+      <PressableScale
+        onPress={onEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${todo.title}`}
+        style={styles.who}>
         <View style={styles.titleRow}>
           <Text style={styles.name}>{todo.title}</Text>
           {p && p.streak > 0 ? <Meta style={[styles.streak, { color: accent }]}>{`${p.streak}-day streak`}</Meta> : null}
@@ -263,7 +297,7 @@ function Row({
             {[when, ...tags].filter(Boolean).join(' · ')}
           </Meta>
         ) : null}
-      </View>
+      </PressableScale>
       <PressableScale
         onPress={onDelete}
         hitSlop={8}

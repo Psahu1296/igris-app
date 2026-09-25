@@ -101,6 +101,29 @@ export async function deleteTodo(lane: Lane, todo: Todo): Promise<void> {
   await json(await authedFetch(lane, `/todos/${todo.id}`, { method: 'DELETE' }), 'Deleting it');
 }
 
+/** What the edit sheet may change. `due_at` and `recurrence` are one choice: send both. */
+export type TodoEdit = {
+  title?: string;
+  priority?: Priority;
+  due_at?: string | null;
+  recurrence?: Recurrence | null;
+};
+
+/** A hand edit (maestro PATCH /todos/{id}). A 422's sentence is shown as it is. */
+export async function updateTodo(lane: Lane, todo: Todo, edit: TodoEdit): Promise<Todo> {
+  const res = await authedFetch(lane, `/todos/${todo.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  });
+  if (res.status === 422) {
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new Error(typeof body?.detail === 'string' ? body.detail : 'maestro refused that change.');
+  }
+  if (res.status === 405) throw new Error('This maestro cannot edit todos yet. Update it.');
+  return (await json<{ todo: Todo }>(res, 'Saving it')).todo;
+}
+
 /** Send what was done on the alarm screen. Returns how many maestro accepted. */
 async function flushOutbox(lane: Lane): Promise<number> {
   const device = android();

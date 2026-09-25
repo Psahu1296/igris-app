@@ -10,13 +10,16 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 
 /**
  * A todo's alarm going off, and the Done / Snooze buttons on its notification.
  *
- * Normal priority: a quiet notification in the shade. High and must: an alarm-channel
+ * Normal priority: an ordinary notification that pops up and sounds once. (It began
+ * as IMPORTANCE_LOW — silent — and on ColorOS that files it under "silent
+ * notifications": a reminder fired on time on 2026-09-24 and nobody saw it.) High and must: an alarm-channel
  * notification with a full-screen intent (TodoAlarmActivity over the lock screen) whose
  * sound loops until acted on, then re-pokes while it is ignored (TodoAlarms.nextRepoke).
  * Swiping it away does not count as acting on it.
@@ -62,28 +65,47 @@ class TodoAlarmReceiver : BroadcastReceiver() {
       .setContentIntent(overlay)
       .setAutoCancel(!loud)
       .setCategory(if (loud) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
-      .setPriority(if (loud) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_DEFAULT)
-    if (session != null) {
-      // Starting a session is a screen, not a button press — it opens the overlay's Start.
-      builder.addAction(0, "Start", overlay)
-    } else {
-      builder.addAction(0, if (firing.optBoolean("done_on_ack")) "Got it" else "Done", button(context, firing, TodoAlarms.ACTION_DONE, id))
-    }
+      .setPriority(if (loud) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
+    // Android shows three buttons at most; the overlay always has them all. A session
+    // todo keeps Done among them — the one way out that needs no maestro.
+    val actions = mutableListOf<NotificationCompat.Action>()
+    // Starting a session is a screen, not a button press — it opens the overlay's Start.
+    if (session != null) actions.add(NotificationCompat.Action(0, "Start", overlay))
+    actions.add(
+      NotificationCompat.Action(
+        0, if (firing.optBoolean("done_on_ack")) "Got it" else "Done",
+        button(context, firing, TodoAlarms.ACTION_DONE, id),
+      ),
+    )
     if (firing.optBoolean("can_skip")) {
-      builder.addAction(0, "Skip to next slot", button(context, firing, TodoAlarms.ACTION_SKIP, id + 2))
+      actions.add(NotificationCompat.Action(0, "Skip", button(context, firing, TodoAlarms.ACTION_SKIP, id + 2)))
     }
     if (TodoAlarms.canSnooze(firing)) {
-      builder.addAction(0, "Snooze 10 min", button(context, firing, TodoAlarms.ACTION_SNOOZE, id + 1))
+      actions.add(NotificationCompat.Action(0, "Snooze 10 min", button(context, firing, TodoAlarms.ACTION_SNOOZE, id + 1)))
     }
+    actions.take(3).forEach { builder.addAction(it) }
     if (loud) {
       builder.setFullScreenIntent(overlay, true)
-        // Stops the looping sound eventually; the re-poke brings it back.
-        .setTimeoutAfter(5 * 60_000L)
+        // Stops the looping sound; the re-poke brings it back. Was 5 minutes of
+        // alarm out of every 10 — too much of the battery for an ignored phone.
+        .setTimeoutAfter(2 * 60_000L)
     }
     val notification = builder.build()
     // Loops the channel's sound until the notification is acted on or cancelled.
     if (loud) notification.flags = notification.flags or Notification.FLAG_INSISTENT
     context.getSystemService(NotificationManager::class.java).notify(id, notification)
+
+    // The full-screen intent only takes over the screen when the phone is locked or
+    // off; in use, Android shows a heads-up banner instead, and on ColorOS that was just
+    // a sound with nothing on screen (2026-09-24). Opening the alarm screen directly is
+    // a background activity start, allowed only to an app that may draw over others.
+    if (loud && Settings.canDrawOverlays(context)) {
+      try {
+        context.startActivity(TodoAlarmActivity.intent(context, firing))
+      } catch (e: RuntimeException) {
+        // Refused anyway (an OEM restriction): the notification is still there.
+      }
+    }
 
     TodoAlarms.nextRepoke(firing, System.currentTimeMillis())?.let { at -> TodoAlarms.again(context, firing, at) }
   }
@@ -100,7 +122,9 @@ class TodoAlarmReceiver : BroadcastReceiver() {
 
   companion object {
     const val CHANNEL_ALARM = "todo_alarm"
-    const val CHANNEL_QUIET = "todo_quiet"
+    // A new id, not a change to "todo_quiet": a channel's importance is fixed once it
+    // exists, so the old silent channel stays on phones that have it, unused.
+    const val CHANNEL_QUIET = "todo_notify"
 
     fun subtitle(firing: JSONObject): String = when {
       firing.optString("priority") == "must" -> "Must-do"
@@ -128,8 +152,8 @@ class TodoAlarmReceiver : BroadcastReceiver() {
       }
       if (nm.getNotificationChannel(CHANNEL_QUIET) == null) {
         nm.createNotificationChannel(
-          NotificationChannel(CHANNEL_QUIET, "Todos", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Normal todos and reminders, silently in the shade."
+          NotificationChannel(CHANNEL_QUIET, "Todos and reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Normal todos and reminders: a pop-up and one sound."
           },
         )
       }
