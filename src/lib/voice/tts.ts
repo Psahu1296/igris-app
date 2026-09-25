@@ -4,6 +4,7 @@ import type { AssetSpec } from '@/lib/assets/manifest';
 import { toDevanagari } from '@/lib/voice/hinglish';
 import { segments } from '@/lib/voice/language';
 import { modelPath, modelState } from '@/lib/voice/model';
+import { toSpeech } from '@/lib/markdown';
 import { spellOut } from '@/lib/voice/shorthand';
 import { speakHindi, stopHindi } from '@/lib/voice/system-tts';
 
@@ -111,8 +112,9 @@ class MixedTts implements Tts {
   async speak(text: string): Promise<void> {
     await this.stop();
     const mine = ++this.generation;
-    // Spelled out first ("mtlb" → "matlab"), so the language split sees real words.
-    for (const segment of segments(spellOut(text))) {
+    // Markdown to words first (a table read row by row, no asterisks said aloud), then
+    // shorthand spelled out ("mtlb" → "matlab"), so the language split sees real words.
+    for (const segment of segments(spellOut(toSpeech(text)))) {
       if (this.generation !== mine) return;
       if (segment.lang === 'hi') {
         try {

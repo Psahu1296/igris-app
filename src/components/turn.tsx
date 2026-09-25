@@ -26,6 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { IgrisLoader } from '@/components/igris-loader';
+import { Markdown } from '@/components/markdown';
 import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
@@ -155,7 +156,7 @@ export function Turn({
           </View>
 
           {/* Response Text */}
-          {turn.answer ? <Answer style={styles.answerText}>{turn.answer}</Answer> : null}
+          {turn.answer ? <Markdown text={turn.answer} accent={accent} /> : null}
 
           {turn.device?.status === 'countdown' && turn.device.candidates?.[0] ? (
             <CountdownCard
@@ -473,9 +474,10 @@ function ReplyCard({
 const LETTERS = 'ABCD';
 
 /**
- * A tutor question's options. Tapping sends the letter as the next message — the same
- * thing saying "B" does — so maestro grades one way whichever was used. Once answered
- * (a later turn exists) the options stay visible but stop responding.
+ * A tutor question's answer buttons. The options themselves are in the answer text
+ * (maestro lists them as "A · …"), so the card is just the letters — tapping one
+ * sends it as the next message, the same thing saying "B" does. Once answered (a
+ * later turn exists) the buttons stay visible but stop responding.
  */
 function QuizOptions({
   card,
@@ -487,8 +489,7 @@ function QuizOptions({
   onAnswer?: (text: string) => void;
 }) {
   return (
-    <View style={[styles.callCard, { borderColor: accent + '44', backgroundColor: accent + '0C' }]}>
-      <Meta style={styles.callPrompt}>{onAnswer ? 'Tap your answer, or say the letter' : 'Answered'}</Meta>
+    <View style={styles.quizRow}>
       {card.options.map((option, i) => (
         <PressableScale
           key={option}
@@ -499,11 +500,12 @@ function QuizOptions({
           }}
           accessibilityRole="button"
           accessibilityLabel={`${LETTERS[i]}: ${option}`}
-          style={[styles.quizOption, !onAnswer && styles.quizDone]}>
-          <View style={[styles.quizLetter, { borderColor: accent }]}>
-            <Text style={[styles.quizLetterText, { color: accent }]}>{LETTERS[i]}</Text>
-          </View>
-          <Text style={styles.quizText}>{option}</Text>
+          style={[
+            styles.quizLetter,
+            { borderColor: accent + '66', backgroundColor: accent + '14' },
+            !onAnswer && styles.quizDone,
+          ]}>
+          <Text style={[styles.quizLetterText, { color: accent }]}>{LETTERS[i]}</Text>
         </PressableScale>
       ))}
     </View>
@@ -631,9 +633,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1,
   },
-  answerText: {
-    color: Palette.text,
-  },
   deviceChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -644,23 +643,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  quizOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Space.sm,
-    paddingVertical: Space.sm,
-  },
-  quizDone: { opacity: 0.55 },
+  quizRow: { flexDirection: 'row', gap: Space.sm, marginTop: Space.xs },
+  quizDone: { opacity: 0.45 },
   quizLetter: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quizLetterText: { fontFamily: Font.uiMedium, fontSize: 12 },
-  quizText: { flex: 1, fontFamily: Font.ui, color: Palette.text, fontSize: 14, lineHeight: 20 },
+  quizLetterText: { fontFamily: Font.uiMedium, fontSize: 17 },
   callCard: {
     borderWidth: 1,
     borderRadius: 12,
