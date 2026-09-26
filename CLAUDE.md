@@ -148,6 +148,25 @@ Consequences, in order of how much they will bite:
   card inside it is its own file in `components/cards/` (`device-card.tsx` picks which
   device card a step gets; shared card styles in `cards/styles.ts`). A new SSE frame =
   a field on `TurnState`, a branch in `ask`'s `onEvent`, and a card.
+- **Updates, both kinds** (added 2026-09-27; `lib/updates.ts`, `app/updates.tsx`,
+  `AppUpdater.kt`). JS: expo-updates still applies a downloaded bundle on the next launch;
+  Menu › Updates can fetch it and "Restart now". Native: the release build compares the
+  latest GitHub Release tag with its own versionName (now set from the tag by
+  android-release.yml) and downloads the APK itself into cacheDir/updates, then opens
+  Android's installer through `IgrisUpdateFileProvider` (a subclass, so it cannot clash
+  with other modules' FileProvider in the manifest merge). Needs "Install unknown apps"
+  once; Android refuses an APK signed with another key. Only github.com release hosts
+  are fetched. The dev build (.dev) is never offered an APK — it would install next to
+  it. **v1.1.0 itself must be installed by hand once**: older APKs have no updater.
+- **Emergencies never leave the phone's control** (added 2026-09-27; `lib/emergency.ts`,
+  `cards/sos-card.tsx`, `app/helplines.tsx`). `ask()` checks `isEmergency` before
+  anything else and shows the SOS card with no network call. Calls to 112/108/100/181
+  open the dialer (`dial`, ACTION_DIAL): Android does not let a third-party app place
+  a call to an emergency number, and one tap cannot be triggered by a misheard word.
+  Location goes out only through the SMS app, with the person choosing the recipient.
+  Nearby hospital/pharmacy/police opens Google Maps' "near me" search — OpenStreetMap
+  Overpass timed out on all three public servers when tried. The helpline table matches
+  `maestro/tools/emergency.py`; both carry the official source per number — change both.
 - **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
   on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
   does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were
