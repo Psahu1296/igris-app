@@ -67,6 +67,13 @@ type IgrisDeviceModule = {
   todoOutbox(): string;
   clearTodoOutbox(ids: string[]): void;
   todoAlarmAccess(): TodoAlarmAccess;
+  /** The installed build: versionName is the release tag without the "v". */
+  appVersion(): { versionName: string; versionCode: number; packageName: string };
+  /** Android 8+: whether Igris may open the installer (Settings › Install unknown apps). */
+  canInstallUpdates(): boolean;
+  openInstallPermission(): void;
+  /** Downloads a GitHub release APK and opens Android's installer; resolves when it is showing. */
+  downloadAndInstall(url: string): Promise<void>;
   openTodoAlarmSettings(which: keyof TodoAlarmAccess): void;
 };
 

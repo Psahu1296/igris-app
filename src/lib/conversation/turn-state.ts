@@ -23,6 +23,8 @@ export type TurnState = {
   bill?: BillCard | null;
   /** A picture Igris drew in this turn. */
   drawn?: Drawn | null;
+  /** The ask was an emergency: the SOS card, answered on the phone (lib/emergency.ts). */
+  sos?: boolean;
 };
 
 /** A turn with nothing happened yet; callers override what they know. */

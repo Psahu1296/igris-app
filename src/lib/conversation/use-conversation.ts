@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { callContact, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { COUNTDOWN_MS, type Favourite } from '@/lib/favourites';
+import { isEmergency } from '@/lib/emergency';
 import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { sendReply } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
@@ -190,6 +191,16 @@ export function useConversation() {
 
   const ask = useCallback(
     async (message: string, extra?: AskExtra) => {
+      // An emergency is answered here and now: no pending card, no lane probe, no
+      // network. The card's buttons work with the Mac asleep and Render cold.
+      if (!extra?.photo && isEmergency(message)) {
+        const id = `${Date.now()}`;
+        const answer = 'Tap 112 to call for help. Your location can go by SMS below.';
+        setTurns((prev) => [...prev, blankTurn(id, message, lane, { answer, sos: true, elapsedMs: 0 })]);
+        void speech.speak('Tap one one two to call for help.', id);
+        return;
+      }
+
       // A reply to a pending call card is answered here, on the phone — sending "yes"
       // to maestro would only get it classified as chit-chat. Only for a single
       // candidate: "yes" to a list of three Rahuls would be a guess.

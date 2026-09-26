@@ -43,6 +43,13 @@ jobs:
       - name: Restore release keystore
         run: echo "${{ secrets.IGRIS_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/igris-release.jks"
 
+      # v1.1.0 → versionName 1.1.0, which the app's update check compares with the latest
+      # release. A manual run is not a release (a prerelease the app never offers).
+      - name: Version name
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else echo "VERSION_NAME=0.0.0-build.${{ github.run_number }}" >> "$GITHUB_ENV"; fi
+
       - name: Build release APK
         working-directory: android
         env:
@@ -51,7 +58,7 @@ jobs:
           IGRIS_KEY_ALIAS: igris # not secret; as a secret it masked every "igris" in the logs
           IGRIS_KEY_PASSWORD: ${{ secrets.IGRIS_KEY_PASSWORD }}
         # arm64 only: every phone we target, and half the build time and APK size.
-        run: ./gradlew assembleRelease -PigrisVersionCode=${{ github.run_number }} -PreactNativeArchitectures=arm64-v8a --no-daemon
+        run: ./gradlew assembleRelease -PigrisVersionCode=${{ github.run_number }} -PigrisVersionName=${VERSION_NAME} -PreactNativeArchitectures=arm64-v8a --no-daemon
 
       # Kept as a run artifact too, so a built APK is never lost to a failed release step.
       - uses: actions/upload-artifact@v4

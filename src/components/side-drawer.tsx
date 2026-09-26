@@ -2,6 +2,8 @@ import * as Haptics from 'expo-haptics';
 import {
   ChevronRight,
   Cloud,
+  LifeBuoy,
+  RefreshCw,
   ListTodo,
   LogOut,
   MessageSquare,
@@ -34,6 +36,8 @@ interface SideDrawerProps {
   onOpenChats: () => void;
   onOpenTodos: () => void;
   onOpenFavourites: () => void;
+  onOpenHelplines: () => void;
+  onOpenUpdates: () => void;
   onNewConversation: () => void;
   onSignOut: () => void;
   lane: Lane;
@@ -49,6 +53,8 @@ export function SideDrawer({
   onOpenChats,
   onOpenTodos,
   onOpenFavourites,
+  onOpenHelplines,
+  onOpenUpdates,
   onNewConversation,
   onSignOut,
   lane,
@@ -202,6 +208,36 @@ export function SideDrawer({
                   <View style={styles.navTextGroup}>
                     <Answer style={styles.navLabel}>Quick Call Contacts</Answer>
                     <Meta style={styles.navHint}>Manage instant dial favourites</Meta>
+                  </View>
+                  <ChevronRight size={16} color={Palette.faint} />
+                </PressableScale>
+
+                {/* Helplines & SOS — red, because it is the one row that is never casual */}
+                <PressableScale
+                  onPress={() => handleAction(onOpenHelplines)}
+                  accessibilityRole="button"
+                  style={styles.navRow}>
+                  <View style={[styles.navIconBox, { backgroundColor: Palette.alert + '1A' }]}>
+                    <LifeBuoy size={18} color={Palette.alert} />
+                  </View>
+                  <View style={styles.navTextGroup}>
+                    <Answer style={styles.navLabel}>Helplines & SOS</Answer>
+                    <Meta style={styles.navHint}>112, ambulance, women, cyber · share location</Meta>
+                  </View>
+                  <ChevronRight size={16} color={Palette.faint} />
+                </PressableScale>
+
+                {/* Updates */}
+                <PressableScale
+                  onPress={() => handleAction(onOpenUpdates)}
+                  accessibilityRole="button"
+                  style={styles.navRow}>
+                  <View style={[styles.navIconBox, { backgroundColor: accent + '1A' }]}>
+                    <RefreshCw size={18} color={accent} />
+                  </View>
+                  <View style={styles.navTextGroup}>
+                    <Answer style={styles.navLabel}>Updates</Answer>
+                    <Meta style={styles.navHint}>Version, check and install updates</Meta>
                   </View>
                   <ChevronRight size={16} color={Palette.faint} />
                 </PressableScale>

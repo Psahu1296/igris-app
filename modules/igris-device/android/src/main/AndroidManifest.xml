@@ -20,6 +20,11 @@
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+  <!-- In-app updates (AppUpdater.kt): hand a downloaded release APK to Android's
+       installer. The user still confirms, and Android refuses any APK not signed with
+       the installed app's key. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
   <!-- Android 11+ package visibility: without this, resolving the clock's
        handler can fail even though it is installed. -->
   <queries>
@@ -68,6 +73,15 @@
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
       </intent-filter>
     </receiver>
+    <provider
+      android:name="expo.modules.igrisdevice.IgrisUpdateFileProvider"
+      android:authorities="${applicationId}.igris.updates"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/igris_update_paths" />
+    </provider>
     <!-- Its own task (empty affinity), so dismissing it never surfaces the chat. -->
     <activity
       android:name="expo.modules.igrisdevice.TodoAlarmActivity"

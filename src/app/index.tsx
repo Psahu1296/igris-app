@@ -205,6 +205,8 @@ export default function Transcript() {
         onOpenChats={() => setBrowsing(true)}
         onOpenTodos={() => router.push('/todos')}
         onOpenFavourites={() => router.push('/favourites')}
+        onOpenHelplines={() => router.push('/helplines')}
+        onOpenUpdates={() => router.push('/updates')}
         onNewConversation={() => void startSession()}
         onSignOut={() => void signOut()}
         lane={lane}

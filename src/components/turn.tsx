@@ -10,6 +10,7 @@ import { BillFields } from '@/components/cards/bill-fields';
 import { DeviceCard } from '@/components/cards/device-card';
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { QuizOptions } from '@/components/cards/quiz-options';
+import { SosCard } from '@/components/cards/sos-card';
 import { IgrisLoader } from '@/components/igris-loader';
 import { Markdown } from '@/components/markdown';
 import { PressableScale } from '@/components/pressable-scale';
@@ -137,6 +138,8 @@ export function Turn({
               onCancel={() => onCancelCall?.(turn.id)}
             />
           ) : null}
+
+          {turn.sos ? <SosCard /> : null}
 
           {turn.drawn ? <DrawnPicture lane={turn.lane} picture={turn.drawn} /> : null}
 

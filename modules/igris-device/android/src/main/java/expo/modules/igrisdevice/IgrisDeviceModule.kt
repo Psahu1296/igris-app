@@ -147,6 +147,34 @@ class IgrisDeviceModule : Module() {
       start(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)), "open the dialer")
     }
 
+    // ── In-app updates (AppUpdater.kt) ──────────────────────────────────────────
+    Function("appVersion") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      AppUpdater.version(context)
+    }
+
+    Function("canInstallUpdates") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      AppUpdater.canInstall(context)
+    }
+
+    Function("openInstallPermission") {
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      start(AppUpdater.installPermissionIntent(context), "open the install permission")
+    }
+
+    // Resolves once Android's installer is showing; the user confirms there.
+    AsyncFunction("downloadAndInstall") { url: String, promise: Promise ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      if (!AppUpdater.canInstall(context)) {
+        throw CodedException("ERR_NO_INSTALL_PERMISSION", "Allow Igris to install updates, then tap Update again.", null)
+      }
+      AppUpdater.downloadAndInstall(context.applicationContext, url) { error ->
+        if (error == null) promise.resolve(null)
+        else promise.reject(CodedException("ERR_UPDATE", error.message ?: "The update failed.", error))
+      }
+    }
+
     // ── Todo alarms (TodoAlarms.kt) ─────────────────────────────────────────────
     // JS syncs with maestro; everything that must work with the app closed is native.
 

@@ -10,12 +10,13 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ToastAndroid, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplash } from '@/components/animated-splash';
 import { Palette } from '@/constants/theme';
+import { checkApk } from '@/lib/updates';
 import { SessionProvider, useSession } from '@/state/session';
 
 SplashScreen.preventAutoHideAsync();
@@ -71,6 +72,16 @@ function Shell() {
 function RootNavigator() {
   const { status } = useSession();
 
+  // Once per launch: a newer APK is worth saying out loud, because unlike a JS update it
+  // never arrives by itself. Quiet on failure — no network is not news.
+  useEffect(() => {
+    checkApk()
+      .then((release) => {
+        if (release) ToastAndroid.show(`Igris ${release.version} is available — Menu › Updates`, ToastAndroid.LONG);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <Stack
       screenOptions={{
@@ -81,6 +92,8 @@ function RootNavigator() {
         <Stack.Screen name="index" />
         <Stack.Screen name="voice" />
         <Stack.Screen name="favourites" />
+        <Stack.Screen name="helplines" />
+        <Stack.Screen name="updates" />
         <Stack.Screen name="todos" />
         <Stack.Screen name="todo" />
       </Stack.Protected>
