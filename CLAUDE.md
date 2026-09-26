@@ -87,7 +87,7 @@ Consequences, in order of how much they will bite:
   that database, and the Mac may well point at a local one. maestro has **one `session_token` column per
   credential row**, so an ai-playground login evicts the phone's session — the client must
   auto-relogin on 401, with backoff, because `/login` is rate-limited to 5/minute.
-- **`thread_id` depends on role** (`maestro/main.py::_thread_config`). A *demo* session is
+- **`thread_id` depends on role** (`maestro/api/deps.py::thread_config`). A *demo* session is
   namespaced to `demo:<username>:<session_id>`, but the **owner's `thread_id` is the
   `session_id` the client sends, verbatim**. Since 2026-09-24 the phone starts a
   **new thread on every launch** (`phone-<utc stamp>-<rand>`, `state/session.tsx`) and
@@ -131,7 +131,7 @@ Consequences, in order of how much they will bite:
   intent query through Gradle's manifest merge. Photos are not restored from history
   (the history keeps "[Photo] <question>").
 - **Igris draws pictures on the Mac** (added 2026-09-25): "draw a tiger" gets an `image`
-  SSE frame (`{name, prompt}`); `DrawnPicture` in turn.tsx loads `GET /images/{name}`
+  SSE frame (`{name, prompt}`); `DrawnPicture` (`components/cards/drawn-picture.tsx`) loads `GET /images/{name}`
   through expo-image with the bearer token (`drawnSource`). History rows end with an
   `[image:<name>]` marker that `splitDrawn` removes and turns back into the picture. The
   files live on the Mac, so on Render a reopened conversation says it cannot load them.
@@ -140,6 +140,14 @@ Consequences, in order of how much they will bite:
   `expo-media-library/legacy` (write-only photo permission). A native module: a new APK.
   A photo sent with "make this cartoon style" comes back edited (maestro decides; the
   app just shows the `image` frame, same as a drawing).
+- **The transcript screen is layout; the conversation is a hook** (split 2026-09-27).
+  `src/app/index.tsx` draws; `lib/conversation/use-conversation.ts` owns the turns,
+  history loading, `ask`, and the call/reply/countdown confirmations;
+  `lib/conversation/device-steps.ts` performs a `device_action` frame; `TurnState` lives in
+  `lib/conversation/turn-state.ts`. `components/turn.tsx` is one turn's frame, and each
+  card inside it is its own file in `components/cards/` (`device-card.tsx` picks which
+  device card a step gets; shared card styles in `cards/styles.ts`). A new SSE frame =
+  a field on `TurnState`, a branch in `ask`'s `onEvent`, and a card.
 - **Endpointing is RMS, not a model.** Knowing the speaker stopped was the only job the
   on-device model did that mattered, and `voice/wav.ts::rms` over the captured chunks
   does it with no model at all. Thresholds live at the top of `voice/stt.ts` and were
@@ -363,10 +371,10 @@ released with no underruns. Download to speech took under 20s on 5G.
   (asked at the first sync with firings), exact alarms and — on Android 14+ — the
   full-screen switch; `/todos` shows whichever is off. The rules — which slot may be skipped,
   snooze caps, how long to re-poke, a note, `closes_day` — come on each firing from
-  maestro (`todos._rules`); the Kotlin never decides what a daily must-do is.
+  maestro (`todos/schedule.py` `_rules`); the Kotlin never decides what a daily must-do is.
   Start on a session todo sends "Start my session: …" with `todo_session` to a fresh
   thread, and maestro's tutor runs the session; multiple-choice questions arrive as a
-  `tutor_card` SSE frame and render as tappable options (`turn.tsx` `QuizOptions`) that
+  `tutor_card` SSE frame and render as tappable options (`components/cards/quiz-options.tsx`) that
   send the letter as the next message. `/todos` shows weak topics (`lib/tutor.ts`).
   Tapping a todo opens `components/todo-editor.tsx` (title, priority, once/repeats/
   anytime — chips and steppers, no picker library) → `PATCH /todos/{id}`, then re-arms.

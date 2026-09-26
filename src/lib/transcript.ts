@@ -1,4 +1,4 @@
-import type { TurnState } from '@/components/turn';
+import type { TurnState } from '@/lib/conversation/turn-state';
 import { describeAction } from '@/lib/device';
 
 /**
