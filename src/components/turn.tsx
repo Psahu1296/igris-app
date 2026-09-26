@@ -60,7 +60,7 @@ export function Turn({
   const speakAnswer = () => {
     if (!turn.answer) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void speech.speak(turn.answer, turn.id);
+    void speech.speak(turn.answer, turn.id, true);
   };
 
   return (

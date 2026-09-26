@@ -7,6 +7,7 @@ import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { sendReply } from '@/lib/notifications';
 import { threadMessages } from '@/lib/threads';
 import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
+import { autoSpeakOn } from '@/lib/voice/auto-speak';
 import { useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
@@ -251,7 +252,7 @@ export function useConversation() {
                 phase: null,
                 elapsedMs: Date.now() - startedAt,
               });
-              if (!phoneSpeaks) void speech.speak(event.message, id);
+              if (!phoneSpeaks && autoSpeakOn()) void speech.speak(event.message, id);
             } else if (event.kind === 'device') {
               phoneSpeaks =
                 runDeviceAction(event.action, {

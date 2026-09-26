@@ -17,6 +17,9 @@ const PASSWORD = 'igris.password';
 const tokenKey = (lane: Lane) => `igris.token.${lane}`;
 // Not a secret, but it lives here so it is cleared with everything else on sign-out.
 const LANE_PREF = 'igris.lane';
+// A preference, not a secret; kept here because SecureStore is the app's only store.
+// Not cleared on sign-out: whether answers are read aloud is about the phone, not the account.
+const AUTO_SPEAK = 'igris.autoSpeak';
 // Builds before 2026-09-24 restored the last-open thread from here. Nothing writes it
 // now (every launch starts a new conversation); it is only cleared, for old installs.
 const LEGACY_SESSION = 'igris.session';
@@ -47,6 +50,13 @@ export const saveLanePref = (pref: LanePreference) => SecureStore.setItemAsync(L
 export async function loadLanePref(): Promise<LanePreference> {
   const saved = await SecureStore.getItemAsync(LANE_PREF);
   return saved === 'local' || saved === 'cloud' ? saved : 'auto';
+}
+
+export const saveAutoSpeak = (on: boolean) => SecureStore.setItemAsync(AUTO_SPEAK, on ? 'on' : 'off');
+
+/** On unless it was turned off — a fresh install reads answers aloud. */
+export async function loadAutoSpeak(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(AUTO_SPEAK)) !== 'off';
 }
 
 export async function clearAll() {

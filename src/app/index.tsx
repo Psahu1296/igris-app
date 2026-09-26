@@ -1,9 +1,9 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { Check, Copy, Menu } from 'lucide-react-native';
+import { Check, Copy, Menu, Volume2, VolumeX } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/composer';
@@ -20,7 +20,9 @@ import { Gutter, laneColor, Palette, Space, Font } from '@/constants/theme';
 import { useConversation } from '@/lib/conversation/use-conversation';
 import { formatTranscript } from '@/lib/transcript';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
+import { useAutoSpeak } from '@/lib/voice/auto-speak';
 import { useListening } from '@/lib/voice/use-listening';
+import { NO_VOICE, useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
 /**
@@ -47,6 +49,23 @@ export default function Transcript() {
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
   const listening = useListening(lane, laneReachable);
+  const speech = useSpeech();
+  const [autoSpeak, setAutoSpeak] = useAutoSpeak();
+
+  const toggleAutoSpeak = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const next = !autoSpeak;
+    setAutoSpeak(next);
+    if (!next) {
+      void speech.stop(); // off means quiet now, not after this sentence
+    } else if (!speech.available) {
+      // Turning speech on with no voice installed would be one more silent switch.
+      ToastAndroid.show(NO_VOICE, ToastAndroid.LONG);
+      router.push('/voice');
+    } else {
+      ToastAndroid.show('Igris will read answers aloud.', ToastAndroid.SHORT);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -92,6 +111,22 @@ export default function Transcript() {
                 )}
               </PressableScale>
             ) : null}
+
+            {/* Auto-speak: whether each answer is read aloud as it arrives. A card's own
+                Speak button works either way. */}
+            <PressableScale
+              onPress={toggleAutoSpeak}
+              hitSlop={8}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: autoSpeak }}
+              accessibilityLabel={autoSpeak ? 'Stop reading answers aloud' : 'Read answers aloud'}
+              style={styles.headerIconButton}>
+              {autoSpeak ? (
+                <Volume2 size={14} color={laneColor(lanePref)} />
+              ) : (
+                <VolumeX size={14} color={Palette.muted} />
+              )}
+            </PressableScale>
 
             <LaneBadge
               lane={lane}

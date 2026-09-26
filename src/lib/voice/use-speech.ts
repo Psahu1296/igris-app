@@ -1,5 +1,6 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { ToastAndroid } from 'react-native';
 
 import { fetchManifest, type AssetSpec } from '@/lib/assets/manifest';
 import { getSpeaker, releaseSpeaker, speechStatus } from '@/lib/voice/tts';
@@ -28,6 +29,12 @@ const subscribe = (notify: () => void) => {
   };
 };
 
+// Said once per app run, not on every answer: auto-speak would repeat it each turn.
+// A Speak tap (asked) always says it. Until 2026-09-27 a missing voice was silent, so
+// a fresh install simply never spoke and nothing said why.
+let toldNoVoice = false;
+export const NO_VOICE = 'Igris has no voice yet. Download it from Menu → Voice.';
+
 /** The id passed to speak() for the utterance currently playing, or null. */
 export function useSpeakingId(): string | null {
   return useSyncExternalStore(subscribe, () => speakingId);
@@ -38,11 +45,10 @@ export function useSpeakingId(): string | null {
  *
  * Speech is a courtesy, not the contract: if the voice is missing, the engine
  * fails, or audio is unavailable, the answer is still on screen. So failures here
- * are reported quietly and never interrupt the conversation.
+ * are a toast, never an error in the conversation.
  */
 export function useSpeech() {
   const [voice, setVoice] = useState<AssetSpec | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,17 +81,25 @@ export function useSpeech() {
 
   const available = ready;
 
+  /** `asked`: the user tapped Speak, so a missing voice is said every time. */
   const speak = useCallback(
-    async (text: string, id?: string) => {
-      if (!voice || !speechStatus(voice).ready) return;
+    async (text: string, id?: string, asked = false) => {
+      // voice is null until the manifest loads (or when offline) — not known to be
+      // missing, so only a missing download is reported.
+      if (!voice) return;
+      if (!speechStatus(voice).ready) {
+        if (asked || !toldNoVoice) ToastAndroid.show(NO_VOICE, ToastAndroid.LONG);
+        toldNoVoice = true;
+        return;
+      }
       const owner = id ?? null;
       setSpeaking(owner);
       try {
         const tts = await getSpeaker(voice);
         await tts.speak(text);
-        setProblem(null);
       } catch (err) {
-        setProblem(err instanceof Error ? err.message : 'Igris could not speak that.');
+        // Was stored in state that nothing rendered — a failure looked like silence.
+        ToastAndroid.show(err instanceof Error ? err.message : 'Igris could not speak that.', ToastAndroid.SHORT);
       } finally {
         // speak() cancels whatever was playing, so a newer utterance may already own
         // the speaker. Only clear the flag if it is still ours.
@@ -106,5 +120,5 @@ export function useSpeech() {
     }
   }, [voice]);
 
-  return { available, speak, stop, problem };
+  return { available, speak, stop };
 }
