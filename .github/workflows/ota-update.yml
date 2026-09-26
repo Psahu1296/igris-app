@@ -1,21 +1,18 @@
 # Push to main → the new JS bundle goes out over the air via EAS Update. The
 # release app downloads it on launch and runs it on the next launch.
 #
-# An OTA update can only carry JS. If a commit touches native code, a bundle
-# that calls a missing native module would crash the installed app, so those
-# paths are skipped here: tag a release APK instead (android-release.yml), and
+# An OTA update can only carry JS. If a push touches native code, a bundle
+# that calls a missing native module would crash the installed app, so the
+# guard below skips it: tag a release APK instead (android-release.yml), and
 # bump runtimeVersion in app.json + android/.../strings.xml together.
+# (paths-ignore alone isn't enough: it only skips when EVERY file matches, so
+# a push mixing JS and native changes would still ship.)
 name: OTA update
 
 on:
   push:
     branches: [main]
     paths-ignore:
-      - 'android/**'
-      - 'modules/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'app.json'
       - '**.md'
       - '.github/**'
   workflow_dispatch:
@@ -29,18 +26,35 @@ jobs:
       EXPO_PUBLIC_MAESTRO_CLOUD_URL: https://maestro-hvdz.onrender.com
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip if the push touches native code
+        id: guard
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [[ -z "$BEFORE" || "$BEFORE" =~ ^0+$ ]]; then BEFORE="HEAD~1"; fi
+          NATIVE=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -E '^(android/|modules/|package(-lock)?\.json$|app\.json$)' || true)
+          if [[ -n "$NATIVE" ]]; then
+            echo "::warning::Native files changed, skipping OTA. Tag a release APK instead:%0A$NATIVE"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip != 'true'
         with:
-          node-version: 20
+          node-version: 22 # eas-cli needs >=22
           cache: npm
 
       - uses: expo/expo-github-action@v8
+        if: steps.guard.outputs.skip != 'true'
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - run: npm ci
+        if: steps.guard.outputs.skip != 'true'
 
       - name: Publish update
+        if: steps.guard.outputs.skip != 'true'
         run: eas update --channel production --platform android --message "$(git log -1 --pretty=%s)" --non-interactive
