@@ -44,16 +44,26 @@ jobs:
         env:
           IGRIS_KEYSTORE_PATH: ${{ runner.temp }}/igris-release.jks
           IGRIS_KEYSTORE_PASSWORD: ${{ secrets.IGRIS_KEYSTORE_PASSWORD }}
-          IGRIS_KEY_ALIAS: ${{ secrets.IGRIS_KEY_ALIAS }}
+          IGRIS_KEY_ALIAS: igris # not secret; as a secret it masked every "igris" in the logs
           IGRIS_KEY_PASSWORD: ${{ secrets.IGRIS_KEY_PASSWORD }}
         # arm64 only: every phone we target, and half the build time and APK size.
         run: ./gradlew assembleRelease -PigrisVersionCode=${{ github.run_number }} -PreactNativeArchitectures=arm64-v8a --no-daemon
 
+      # Kept as a run artifact too, so a built APK is never lost to a failed release step.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: igris-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_DEBUG: api
         run: |
           TAG="${GITHUB_REF_NAME}"
-          [[ "$GITHUB_REF_TYPE" == tag ]] || TAG="build-${{ github.run_number }}"
           cp android/app/build/outputs/apk/release/app-release.apk "igris-${TAG}.apk"
-          gh release create "$TAG" "igris-${TAG}.apk" --target "$GITHUB_SHA" --title "Igris $TAG" --generate-notes
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            gh release create "$TAG" "igris-${TAG}.apk" --verify-tag --title "Igris $TAG" --generate-notes
+          else
+            gh release create "build-${{ github.run_number }}" "igris-${TAG}.apk" --target "$GITHUB_SHA" --title "Igris build ${{ github.run_number }}" --prerelease
+          fi
