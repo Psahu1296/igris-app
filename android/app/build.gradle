@@ -92,7 +92,8 @@ android {
         applicationId 'com.psahu.igris'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // CI passes the run number so every release APK installs over the last one.
+        versionCode ((findProperty('igrisVersionCode') ?: '1') as Integer)
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
@@ -104,15 +105,25 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Real keys come from the environment (GitHub Secrets in CI, never the repo).
+        if (System.getenv('IGRIS_KEYSTORE_PATH')) {
+            release {
+                storeFile file(System.getenv('IGRIS_KEYSTORE_PATH'))
+                storePassword System.getenv('IGRIS_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('IGRIS_KEY_ALIAS')
+                keyPassword System.getenv('IGRIS_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // Lets the dev client and the release app sit side by side on the phone.
+            applicationIdSuffix '.dev'
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Without IGRIS_KEYSTORE_PATH a local release build still works, debug-signed.
+            signingConfig signingConfigs.findByName('release') ?: signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

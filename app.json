@@ -19,7 +19,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
-      ]
+      ],
+      "runtimeVersion": "1.0.0"
     },
     "plugins": [
       "expo-router",
@@ -43,6 +44,9 @@
       "eas": {
         "projectId": "15314166-7630-4a7d-8992-d1c231a1630e"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/15314166-7630-4a7d-8992-d1c231a1630e"
     }
   }
 }

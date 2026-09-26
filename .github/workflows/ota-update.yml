@@ -1,0 +1,46 @@
+# Push to main → the new JS bundle goes out over the air via EAS Update. The
+# release app downloads it on launch and runs it on the next launch.
+#
+# An OTA update can only carry JS. If a commit touches native code, a bundle
+# that calls a missing native module would crash the installed app, so those
+# paths are skipped here: tag a release APK instead (android-release.yml), and
+# bump runtimeVersion in app.json + android/.../strings.xml together.
+name: OTA update
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'android/**'
+      - 'modules/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app.json'
+      - '**.md'
+      - '.github/**'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_PUBLIC_MAESTRO_LOCAL_URL: ${{ secrets.EXPO_PUBLIC_MAESTRO_LOCAL_URL }}
+      EXPO_PUBLIC_MAESTRO_CLOUD_URL: https://maestro-hvdz.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      - name: Publish update
+        run: eas update --channel production --platform android --message "$(git log -1 --pretty=%s)" --non-interactive
