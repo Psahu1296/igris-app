@@ -55,6 +55,14 @@ jobs:
       - run: npm ci
         if: steps.guard.outputs.skip != 'true'
 
+      # An OTA bundle reaches the phone on its next launch, with no store review and no
+      # APK step in between, so this is the last place a broken build can be stopped.
+      - run: npx tsc --noEmit
+        if: steps.guard.outputs.skip != 'true'
+
+      - run: npx expo lint
+        if: steps.guard.outputs.skip != 'true'
+
       - name: Publish update
         if: steps.guard.outputs.skip != 'true'
         run: eas update --channel production --platform android --message "$(git log -1 --pretty=%s)" --non-interactive

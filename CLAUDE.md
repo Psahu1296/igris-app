@@ -15,7 +15,7 @@ Full plan and the 16 locked decisions: `../.scratch/igris-app/PLAN.md`.
 | Task | Command | Notes |
 |---|---|---|
 | Dev server | `npx expo start` | JS only; needs a dev build installed for native modules |
-| Typecheck | `npx tsc --noEmit` | run before calling anything done |
+| Typecheck | `npx tsc --noEmit` | run before calling anything done. Both workflows run it + lint before shipping |
 | Lint | `npx expo lint` | |
 | Doctor | `npx expo-doctor` | dependency/config drift |
 | Add a package | `npx expo install <pkg>` | **never** `npm i` — this resolves SDK-compatible versions |
