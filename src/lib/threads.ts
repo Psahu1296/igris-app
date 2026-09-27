@@ -41,6 +41,40 @@ export async function threadMessages(lane: Lane, threadId: string): Promise<Thre
   return body.messages ?? [];
 }
 
+/**
+ * maestro's saved reply to `ask`, for a turn whose stream died: a locked screen
+ * freezes the app and cuts its socket, but maestro finishes the turn anyway and saves
+ * the reply (maestro api/chat.py run_turn). Polls until it is there, or null when
+ * maestro never got the ask or `timeoutMs` passes.
+ */
+export async function recoverReply(
+  lane: Lane,
+  threadId: string,
+  ask: string,
+  askedAt: number,
+  timeoutMs = 120_000
+): Promise<string | null> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    try {
+      const messages = await threadMessages(lane, threadId);
+      const at = messages.map((m) => m.role === 'user' && m.content === ask).lastIndexOf(true);
+      // The history write is best-effort, and the ask's row can be missing while the
+      // reply's made it (a dropped Postgres connection did exactly that): then take
+      // a reply saved after the ask was sent, with a little room for clock skew.
+      const reply =
+        at >= 0
+          ? messages.slice(at + 1).find((m) => m.role === 'assistant')
+          : messages.find((m) => m.role === 'assistant' && Date.parse(m.created_at) >= askedAt - 30_000);
+      if (reply) return reply.content;
+    } catch {
+      // Still waking up (Tailscale reconnecting, a new socket): try again.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  return null;
+}
+
 export async function deleteThread(lane: Lane, threadId: string): Promise<void> {
   const res = await authedFetch(lane, `/threads/${encodeURIComponent(threadId)}`, {
     method: 'DELETE',

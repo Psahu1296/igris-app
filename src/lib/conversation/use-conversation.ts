@@ -1,12 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { callContact, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { COUNTDOWN_MS, type Favourite } from '@/lib/favourites';
 import { isEmergency } from '@/lib/emergency';
 import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { sendReply } from '@/lib/notifications';
-import { threadMessages } from '@/lib/threads';
+import { recoverReply, threadMessages } from '@/lib/threads';
 import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
 import { autoSpeakOn } from '@/lib/voice/auto-speak';
 import { useSpeech } from '@/lib/voice/use-speech';
@@ -18,6 +19,19 @@ import { blankTurn, type TurnState } from './turn-state';
 /** Answers to a pending call or reply card, typed or spoken. Whole-message matches only. */
 const YES = /^(yes|yeah|yep|haan|han|ha|ok|okay|sure|go ahead|do it|call|call (him|her|them)|send|send it)[.!]*$/i;
 const NO = /^(no|nope|nahi|na|cancel|don'?t|stop)[.!]*$/i;
+
+/** Resolves once the app is on screen again (at once if it already is). */
+const foreground = () =>
+  AppState.currentState === 'active'
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        const sub = AppState.addEventListener('change', (state) => {
+          if (state === 'active') {
+            sub.remove();
+            resolve();
+          }
+        });
+      });
 
 export type AskExtra = { todoSession?: { todo_id: string; occurrence_at: string | null }; photo?: Photo };
 
@@ -239,6 +253,24 @@ export function useConversation() {
       const patch = (change: Partial<TurnState>) =>
         setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...change } : t)));
 
+      // The stream died after maestro had the ask — usually the screen locked, the app
+      // was frozen and its socket cut. maestro finishes the turn anyway and saves the
+      // reply, so fetch it once the app is back instead of showing an error. A photo
+      // turn is not recovered: /vision/stream still runs inside its stream.
+      let sent = false;
+      const recover = async (): Promise<boolean> => {
+        if (extra?.photo) return false;
+        patch({ status: 'Reconnecting…', phase: 'thinking' });
+        await foreground();
+        const saved = await recoverReply(turnLane, sessionId, message, startedAt);
+        if (!saved) return false;
+        const { text, drawn } = splitDrawn(saved);
+        patch({ answer: text, drawn, status: null, phase: null, error: null, elapsedMs: Date.now() - startedAt });
+        if (autoSpeakOn()) void speech.speak(text, id);
+        syncTodos(turnLane).catch((err: unknown) => console.warn('[todos] sync failed', err));
+        return true;
+      };
+
       try {
         // The lane can change between attaching and sending (Auto, a sleeping Mac).
         if (extra?.photo && turnLane !== 'local') {
@@ -248,6 +280,7 @@ export function useConversation() {
         // Set when the phone itself will speak this turn (reading messages aloud),
         // so maestro's "checking your messages" does not talk over it.
         let phoneSpeaks = false;
+        sent = true;
         await streamChat({
           lane: turnLane,
           message,
@@ -284,10 +317,11 @@ export function useConversation() {
             }
           },
         });
-        if (!answered) {
+        if (!answered && !(await recover())) {
           patch({ status: null, phase: null, error: 'Igris closed the connection without answering.' });
         }
       } catch (err) {
+        if (sent && !(err instanceof AuthError) && (await recover())) return;
         patch({
           status: null,
           phase: null,
