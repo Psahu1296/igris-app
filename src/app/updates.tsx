@@ -91,8 +91,9 @@ export default function UpdatesScreen() {
           <Meta style={styles.sectionTitle}>THIS PHONE</Meta>
           <Row label="App" value={me ? `${me.versionName} (build ${me.versionCode})` : 'unknown — rebuild the app'} />
           <Row label="Runtime" value={bundle.runtimeVersion ?? '—'} />
-          <Row label="Channel" value={bundle.channel ?? (release ? '—' : 'dev (Metro)')} />
-          <Row label="Running" value={bundle.embedded ? 'the JS built into the APK' :
+          {/* A dev build runs without expo-updates: its channel is "" and it is never an embedded launch. */}
+          <Row label="Channel" value={release ? bundle.channel || '—' : 'dev (Metro)'} />
+          <Row label="Running" value={!release ? 'JS from Metro' : bundle.embedded ? 'the JS built into the APK' :
             `update from ${bundle.createdAt ? bundle.createdAt.toLocaleString() : '—'}`} />
         </View>
 
