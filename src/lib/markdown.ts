@@ -32,6 +32,7 @@ export type Block =
   | { type: 'flow'; chains: string[][] }
   | { type: 'mermaid'; text: string }
   | { type: 'math'; steps: string[] }
+  | { type: 'plot'; range: [number, number]; curves: string[] }
   | { type: 'table'; header: string[]; rows: string[][] }
   | { type: 'rule' };
 
@@ -160,6 +161,15 @@ function codeBlock(lang: string, text: string): Block {
       .map((l) => l.split(/\s*(?:->|→|=>|-->)\s*/).filter(Boolean))
       .filter((c) => c.length > 0);
     return chains.length ? { type: 'flow', chains } : { type: 'code', lang, text };
+  }
+  if (lang === 'plot') {
+    // maestro plot.py: "x: a, b" then one "y = <latex>" per curve.
+    const range = /^x:\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/m.exec(text);
+    const curves = [...text.matchAll(/^y\s*=\s*(.+)$/gm)].map((m) => m[1].trim());
+    if (range && curves.length && Number(range[1]) < Number(range[2])) {
+      return { type: 'plot', range: [Number(range[1]), Number(range[2])], curves };
+    }
+    return { type: 'code', lang, text };
   }
   if (lang === 'mermaid') {
     // A straight path draws natively and instantly; anything else — branches,
@@ -309,6 +319,9 @@ export function toSpeech(markdown: string): string {
         break;
       case 'mermaid':
         out.push('The diagram is on screen.');
+        break;
+      case 'plot':
+        out.push('The graph is on screen.');
         break;
       case 'math':
         // A step per sentence: the pause between them is what lets an ear follow working.

@@ -611,6 +611,150 @@ export function speakUnits(text: string, alone = false): string {
   return text.replace(AFTER_NUMBER, (_, d, u) => `${d} ${UNIT_SAY.get(u)}`);
 }
 
+// ── Evaluating, for graphs ───────────────────────────────────────────────────
+
+type Num = (x: number) => number;
+
+const FN_EVAL: Record<string, (v: number) => number> = {
+  sin: Math.sin, cos: Math.cos, tan: Math.tan, cot: (v) => 1 / Math.tan(v), sec: (v) => 1 / Math.cos(v),
+  csc: (v) => 1 / Math.sin(v), cosec: (v) => 1 / Math.sin(v), log: Math.log10, lg: Math.log10, ln: Math.log,
+  exp: Math.exp, arcsin: Math.asin, arccos: Math.acos, arctan: Math.atan, sinh: Math.sinh, cosh: Math.cosh,
+  tanh: Math.tanh,
+};
+const FN_INVERSE: Record<string, (v: number) => number> = { sin: Math.asin, cos: Math.acos, tan: Math.atan };
+
+class Unplottable extends Error {}
+
+/** Precedence over a parsed sequence: the tree above keeps + − × ÷ as flat symbols. */
+class Evaluator {
+  i = 0;
+  constructor(private nodes: Node[]) {}
+
+  expr(): Num {
+    let f = this.term();
+    for (;;) {
+      const n = this.nodes[this.i];
+      if (n?.k === 'sym' && (n.show === '+' || n.show === '−')) {
+        this.i++;
+        const g = this.term();
+        const a = f;
+        f = n.show === '+' ? (x) => a(x) + g(x) : (x) => a(x) - g(x);
+      } else return f;
+    }
+  }
+
+  private term(): Num {
+    let f = this.unary();
+    for (;;) {
+      const n = this.nodes[this.i];
+      if (!n) return f;
+      const a = f;
+      if (n.k === 'sym' && ['×', '·', '÷', '/'].includes(n.show)) {
+        this.i++;
+        const g = this.unary();
+        f = n.show === '÷' || n.show === '/' ? (x) => a(x) / g(x) : (x) => a(x) * g(x);
+      } else if (n.k !== 'sym') {
+        const g = this.unary(); // side by side: 2x, x sin x
+        f = (x) => a(x) * g(x);
+      } else return f;
+    }
+  }
+
+  private unary(): Num {
+    const n = this.nodes[this.i];
+    if (n?.k === 'sym' && n.show === '−') {
+      this.i++;
+      const f = this.unary();
+      return (x) => -f(x);
+    }
+    if (n?.k === 'sym' && n.show === '+') this.i++;
+    return this.primary();
+  }
+
+  private primary(): Num {
+    const n = this.nodes[this.i++];
+    if (!n) throw new Unplottable('end');
+    const fn = n.k === 'fn' ? n.name : n.k === 'script' && n.base.k === 'fn' ? n.base.name : '';
+    if (fn) {
+      // A function takes the factor after it: sin x, sin 2x, sin(x + 1).
+      let f = FN_EVAL[fn];
+      let power: Num | null = null;
+      if (n.k === 'script' && n.sup) {
+        if (show(n.sup) === '−1' && FN_INVERSE[fn]) f = FN_INVERSE[fn];
+        else power = evalSeq(n.sup);
+      }
+      if (!f) throw new Unplottable(fn);
+      let arg = this.primary();
+      const next = this.nodes[this.i];
+      if (next && (next.k === 'var' || next.k === 'num') && this.nodes[this.i - 1]?.k === 'num') {
+        this.i++;
+        const a = arg;
+        const b = evalNode(next);
+        arg = (x) => a(x) * b(x);
+      }
+      const g = f;
+      const a = arg;
+      return power ? (x) => g(a(x)) ** power!(x) : (x) => g(a(x));
+    }
+    return evalNode(n);
+  }
+}
+
+function evalSeq(nodes: Node[]): Num {
+  const e = new Evaluator(nodes);
+  return e.expr();
+}
+
+function evalNode(n: Node): Num {
+  switch (n.k) {
+    case 'num': {
+      const v = Number(n.v);
+      return () => v;
+    }
+    case 'var':
+      if (n.show === 'x') return (x) => x;
+      if (n.show === 'π') return () => Math.PI;
+      if (n.show === 'e') return () => Math.E;
+      throw new Unplottable(n.show);
+    case 'group':
+      return evalSeq(n.body);
+    case 'paren': {
+      const f = evalSeq(n.body);
+      return n.open === '|' ? (x) => Math.abs(f(x)) : f;
+    }
+    case 'frac': {
+      const a = evalSeq(n.num);
+      const b = evalSeq(n.den);
+      return (x) => a(x) / b(x);
+    }
+    case 'sqrt': {
+      const body = evalSeq(n.body);
+      const index = n.index ? evalSeq(n.index) : () => 2;
+      return (x) => body(x) ** (1 / index(x));
+    }
+    case 'script': {
+      if (n.sub) throw new Unplottable('subscript');
+      const base = evalNode(n.base);
+      if (n.sup && isDegree(n.sup)) return (x) => (base(x) * Math.PI) / 180;
+      const p = n.sup ? evalSeq(n.sup) : () => 1;
+      return (x) => base(x) ** p(x);
+    }
+    default:
+      throw new Unplottable(n.k);
+  }
+}
+
+/** A function of x from LaTeX ("x^2 - 3x + 2", "\sin x"), or null if it is not one. Pure. */
+export function evaluator(latex: string): ((x: number) => number) | null {
+  try {
+    const f = evalSeq(parseMath(latex));
+    f(0.5); // unknown letters throw here, at build time
+    return f;
+  } catch {
+    return null;
+  }
+}
+
 /** Bare LaTeX the model left outside dollars: worth reading as maths, not as backslashes. */
 export const BARE_LATEX =
   /\\(frac|dfrac|sqrt|sin|cos|tan|cot|sec|csc|cosec|theta|alpha|beta|pi|times|cdot|div|pm|le|ge|leq|geq|neq|infty|circ|left|right)\b/;

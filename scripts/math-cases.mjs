@@ -87,6 +87,35 @@ if (JSON.stringify(rows) !== JSON.stringify(['A equals B plus C', 'equals 5'])) 
   failed++;
   console.log(`MISS aligned rows: ${JSON.stringify(rows)}`);
 }
+// Graphs (src/components/plot.tsx evaluates with math.evaluator).
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+const EVALS = [
+  [String.raw`\sin x`, Math.PI / 2, 1],
+  ['x^2 - 3x + 2', 3, 2],
+  [String.raw`\sqrt{x}`, 9, 3],
+  [String.raw`\exp{x}`, 1, Math.E],
+  ['1/x', 4, 0.25],
+  [String.raw`\sin 2x`, Math.PI / 4, 1],
+  [String.raw`2\sin x + 1`, Math.PI / 2, 3],
+  [String.raw`\tan^{-1} x`, 1, Math.PI / 4],
+  [String.raw`\frac{1}{x+1}`, 1, 0.5],
+];
+for (const [latex, x, want] of EVALS) {
+  const f = math.evaluator(latex);
+  const got = f ? f(x) : null;
+  if (got === null || !near(got, want)) {
+    failed++;
+    console.log(`MISS evaluate ${latex} at ${x}: got ${got}, want ${want}`);
+  }
+}
+for (const latex of ['x + y', 'a flower']) {
+  if (math.evaluator(latex) !== null) {
+    failed++;
+    console.log(`MISS ${latex} should not be plottable`);
+  }
+}
+CASES.push(...EVALS, 'x + y', 'a flower');
+
 // Hint mode (src/lib/hint.ts): what shows after N steps, and the words that ask for it.
 const hint = load('../src/lib/hint.ts');
 const solved = 'Use the formula.\n$$a = b$$\n$$= c$$\nSo\n$$= d$$\n**d**';

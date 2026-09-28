@@ -4,6 +4,7 @@ import { Linking, ScrollView, StyleSheet, Text, View, type TextStyle } from 'rea
 
 import { MathBlock } from '@/components/math-block';
 import { Mermaid } from '@/components/mermaid';
+import { Plot } from '@/components/plot';
 import { Answer } from '@/components/typography';
 import { Font, Palette, Space, Type } from '@/constants/theme';
 import { parse, spans, type Block, type ListItem } from '@/lib/markdown';
@@ -68,6 +69,8 @@ function BlockView({ block, accent }: { block: Block; accent: string }) {
       return <Mermaid source={block.text} accent={accent} />;
     case 'math':
       return <MathBlock steps={block.steps} accent={accent} />;
+    case 'plot':
+      return <Plot range={block.range} curves={block.curves} accent={accent} />;
     case 'rule':
       return <View style={styles.rule} />;
   }
