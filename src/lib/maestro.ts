@@ -9,6 +9,7 @@ import {
 } from '@/lib/config';
 import { DEVICE_CAPABILITIES, parseDeviceAction, type DeviceAction } from '@/lib/device';
 import { createSseParser } from '@/lib/sse';
+import type { ScoutStarted } from '@/lib/scout';
 import * as secure from '@/lib/secure';
 
 export type { Lane, LanePreference };
@@ -149,7 +150,9 @@ export type TurnEvent =
   /** A bill read from a photo (maestro vision.py). Arrives just before the answer. */
   | { kind: 'bill'; card: BillCard }
   /** A picture Igris drew (maestro imagine.py). Arrives just before the answer. */
-  | { kind: 'drawn'; picture: Drawn };
+  | { kind: 'drawn'; picture: Drawn }
+  /** A background Scout job started (maestro scout/); its report comes later (lib/scout.ts). */
+  | { kind: 'scout'; job: ScoutStarted };
 
 /** A multiple-choice question from the tutor (maestro tutor/session.py): tap to answer. */
 export type QuizCard = { kind: 'mcq'; question: string; options: string[] };
@@ -304,6 +307,16 @@ export async function streamChat(opts: {
           if (typeof picture.name === 'string') onEvent({ kind: 'drawn', picture });
         } catch {
           // malformed: the words still say what was drawn
+        }
+        continue;
+      }
+
+      if (frame.event === 'scout_job') {
+        try {
+          const job = JSON.parse(frame.data) as ScoutStarted;
+          if (typeof job.id === 'string') onEvent({ kind: 'scout', job });
+        } catch {
+          // malformed: the report still arrives in the thread when the job ends
         }
         continue;
       }

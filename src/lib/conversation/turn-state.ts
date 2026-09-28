@@ -25,6 +25,13 @@ export type TurnState = {
   drawn?: Drawn | null;
   /** The ask was an emergency: the SOS card, answered on the phone (lib/emergency.ts). */
   sos?: boolean;
+  /**
+   * A Scout job (lib/scout.ts). On the turn that started it, the job being watched; on a
+   * report turn (no ask, added when the job ends), the job whose papers the card shows.
+   */
+  scout?: string | null;
+  /** This turn is a Scout report that arrived by itself: no ask, so no bubble of yours. */
+  report?: boolean;
 };
 
 /** A turn with nothing happened yet; callers override what they know. */

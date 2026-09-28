@@ -1,12 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, ToastAndroid } from 'react-native';
 
 import { callContact, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { COUNTDOWN_MS, type Favourite } from '@/lib/favourites';
 import { isEmergency } from '@/lib/emergency';
 import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { sendReply } from '@/lib/notifications';
+import { isFinished, scoutJobs, splitScout } from '@/lib/scout';
 import { recoverReply, threadMessages } from '@/lib/threads';
 import { onSessionStart, syncTodos, takeSessionStart, type SessionStart } from '@/lib/todos';
 import { autoSpeakOn } from '@/lib/voice/auto-speak';
@@ -81,10 +82,22 @@ export function useConversation() {
         for (const message of messages) {
           if (message.role === 'user') {
             restored.push(blankTurn(`${message.created_at}-${restored.length}`, message.content, lane));
-          } else if (restored.length > 0) {
-            const { text, drawn } = splitDrawn(message.content);
-            restored[restored.length - 1].answer = text;
-            restored[restored.length - 1].drawn = drawn;
+            continue;
+          }
+          // A Scout report is its own turn: it arrived whenever the job ended, often
+          // after later questions, and belongs to none of them.
+          const { text: words, scout } = splitScout(message.content);
+          if (scout) {
+            restored.push(
+              blankTurn(`${message.created_at}-${restored.length}`, '', lane, { answer: words, scout, report: true })
+            );
+            continue;
+          }
+          const turn = [...restored].reverse().find((t) => !t.report);
+          if (turn) {
+            const { text, drawn } = splitDrawn(words);
+            turn.answer = text;
+            turn.drawn = drawn;
           }
         }
         setTurns(restored);
@@ -109,6 +122,52 @@ export function useConversation() {
     if (probing) return;
     syncTodos(lane).catch((err: unknown) => console.warn('[todos] sync failed', err));
   }, [lane, probing]);
+
+  // Scout jobs being watched: job id → the conversation that started it. Polled while
+  // any is out and the app is on screen; a finished job's report becomes its own turn,
+  // but only in that conversation — in another it is just a toast, and the report is
+  // saved in its own thread for when that is reopened.
+  const [watching, setWatching] = useState<Record<string, string>>({});
+  const sessionRef = useRef(sessionId);
+  useEffect(() => {
+    sessionRef.current = sessionId;
+  }, [sessionId]);
+  useEffect(() => {
+    if (!Object.keys(watching).length) return;
+    let stopped = false;
+    const check = async () => {
+      if (AppState.currentState !== 'active') return;
+      let jobs;
+      try {
+        jobs = await scoutJobs(laneRef.current);
+      } catch {
+        return; // the Mac is asleep or the tailnet is down: the next poll tries again
+      }
+      if (stopped) return;
+      const done = jobs.filter((j) => watching[j.id] && isFinished(j));
+      if (!done.length) return;
+      setWatching((prev) => {
+        const next = { ...prev };
+        for (const j of done) delete next[j.id];
+        return next;
+      });
+      const here = done.filter((j) => watching[j.id] === sessionRef.current);
+      setTurns((prev) => [
+        ...prev.map((t) => (done.some((j) => j.id === t.scout) && !t.report ? { ...t, scout: null } : t)),
+        ...here.map((j) => blankTurn(`report-${j.id}`, '', laneRef.current, { answer: j.report, scout: j.id, report: true })),
+      ]);
+      ToastAndroid.show(
+        here.length ? 'The scout is back.' : 'The scout is back. Its report is in the conversation that sent it.',
+        ToastAndroid.SHORT
+      );
+      if (autoSpeakOn()) for (const j of here) void speech.speak(j.report, `report-${j.id}`);
+    };
+    const timer = setInterval(() => void check(), 8000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [watching, speech]);
 
   const patchDevice = useCallback(
     (turnId: string, change: Partial<DeviceStep>) =>
@@ -306,6 +365,9 @@ export function useConversation() {
                 }) || phoneSpeaks;
             } else if (event.kind === 'drawn') {
               patch({ drawn: event.picture });
+            } else if (event.kind === 'scout') {
+              patch({ scout: event.job.id });
+              setWatching((prev) => ({ ...prev, [event.job.id]: sessionId }));
             } else if (event.kind === 'bill') {
               patch({ bill: event.card });
             } else if (event.kind === 'quiz') {

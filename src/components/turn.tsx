@@ -10,6 +10,7 @@ import { BillFields } from '@/components/cards/bill-fields';
 import { DeviceCard } from '@/components/cards/device-card';
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { QuizOptions } from '@/components/cards/quiz-options';
+import { ScoutCard, ScoutPending } from '@/components/cards/scout-card';
 import { SosCard } from '@/components/cards/sos-card';
 import { IgrisLoader } from '@/components/igris-loader';
 import { Markdown } from '@/components/markdown';
@@ -66,7 +67,8 @@ export function Turn({
 
   return (
     <Animated.View entering={FadeInUp.springify().damping(18)} style={styles.turnContainer}>
-      {/* User Question Speech Bubble */}
+      {/* User Question Speech Bubble — none on a Scout report, which nobody asked just then */}
+      {turn.report ? null : (
       <View style={styles.userWrapper}>
         <View
           style={[
@@ -85,6 +87,7 @@ export function Turn({
           {turn.ask || !turn.photo ? <Text style={styles.askText}>{turn.ask}</Text> : null}
         </View>
       </View>
+      )}
 
       {/* Glass Response Card */}
       {/* Igris's card sits in the same theme as your bubble but much fainter (~6% wash
@@ -146,6 +149,9 @@ export function Turn({
           {turn.bill ? <BillFields bill={turn.bill} accent={accent} /> : null}
 
           {turn.quiz ? <QuizOptions card={turn.quiz} accent={accent} onAnswer={onAnswer} /> : null}
+
+          {turn.scout && turn.report ? <ScoutCard lane={turn.lane} jobId={turn.scout} accent={accent} /> : null}
+          {turn.scout && !turn.report ? <ScoutPending accent={accent} /> : null}
 
           {/* Animated Thinking Row */}
           {!turn.answer && turn.status ? (
