@@ -18,6 +18,9 @@ import { useSession } from '@/state/session';
 import { reason, runDeviceAction } from './device-steps';
 import { blankTurn, type TurnState } from './turn-state';
 
+// maestro reader.py and vision.py's read mode: a page or PDF asked to be read out.
+const READ_ALOUD = /\bread\b.*\b(aloud|out|to me)\b|\bpadh\s*(ke|kar)\s*sunao\b|\bsunao\b/i;
+
 /** Answers to a pending call or reply card, typed or spoken. Whole-message matches only. */
 const YES = /^(yes|yeah|yep|haan|han|ha|ok|okay|sure|go ahead|do it|call|call (him|her|them)|send|send it)[.!]*$/i;
 const NO = /^(no|nope|nahi|na|cancel|don'?t|stop)[.!]*$/i;
@@ -380,7 +383,8 @@ export function useConversation() {
                 elapsedMs: Date.now() - startedAt,
               });
               const said = reveal ? revealed(event.message, reveal).text : event.message;
-              if (!phoneSpeaks && autoSpeakOn()) void speech.speak(said, id);
+              // "Read this aloud" is spoken whatever the auto-speak setting says.
+              if (!phoneSpeaks && (autoSpeakOn() || READ_ALOUD.test(message))) void speech.speak(said, id);
             } else if (event.kind === 'device') {
               phoneSpeaks =
                 runDeviceAction(event.action, {

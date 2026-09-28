@@ -597,7 +597,7 @@ const UNITS: [string, string][] = [
   ['ml', 'millilitres'], ['kJ', 'kilojoules'], ['kW', 'kilowatts'], ['kWh', 'kilowatt hours'], ['Hz', 'hertz'],
   ['Pa', 'pascals'], ['mol', 'moles'], ['min', 'minutes'], ['hr', 'hours'], ['Ω', 'ohms'],
   ['m', 'metres'], ['g', 'grams'], ['s', 'seconds'], ['N', 'newtons'], ['J', 'joules'], ['W', 'watts'],
-  ['V', 'volts'], ['A', 'amperes'], ['K', 'kelvin'], ['L', 'litres'],
+  ['V', 'volts'], ['A', 'amperes'], ['K', 'kelvin'], ['L', 'litres'], ['h', 'hours'],
 ];
 UNITS.sort((a, b) => b[0].length - a[0].length);
 const esc = (u: string) => u.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -607,7 +607,17 @@ const UNIT_SAY = new Map(UNITS);
 /** Units said as words: "9.8 m/s²" → "9.8 metres per second squared". `alone`: the
  * whole text is a unit (a formula's \text{km/h}), with no number before it. Pure. */
 export function speakUnits(text: string, alone = false): string {
-  if (alone && UNIT_SAY.has(text.trim())) return UNIT_SAY.get(text.trim())!;
+  if (alone) {
+    if (UNIT_SAY.has(text.trim())) return UNIT_SAY.get(text.trim())!;
+    // A compound unit in \text{}: "kg m/s" → "kilograms metres per second" — singular
+    // after "per", as it is said.
+    const parts = text.trim().split(/\s*(\/)\s*|\s+/).filter(Boolean);
+    const said = parts.map((p, i) => {
+      const word = p === '/' ? 'per' : UNIT_SAY.get(p);
+      return word && parts[i - 1] === '/' ? word.replace(/s$/, '') : word;
+    });
+    if (parts.length && said.every(Boolean)) return said.join(' ');
+  }
   return text.replace(AFTER_NUMBER, (_, d, u) => `${d} ${UNIT_SAY.get(u)}`);
 }
 

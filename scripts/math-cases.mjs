@@ -72,6 +72,11 @@ const UNITS = [
   ['It runs 60 km/h, weighs 2 kg and is at 25 °C.', 'It runs 60 kilometres per hour, weighs 2 kilograms and is at 25 degrees Celsius.'],
   ['Option A is 5 marks.', 'Option A is 5 marks.'],
 ];
+if (math.mathToSpeech(String.raw`p = 2\,\text{kg m/s}`) !== 'P equals 2 kilograms metres per second') {
+  failed++;
+  console.log(`MISS compound unit: ${math.mathToSpeech(String.raw`p = 2\,\text{kg m/s}`)}`);
+}
+CASES.push('compound unit');
 for (const [text, want] of UNITS) {
   const got = math.speakUnits(text);
   if (got !== want) {
