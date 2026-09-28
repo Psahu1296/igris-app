@@ -421,6 +421,16 @@ released with no underruns. Download to speech took under 20s on 5G.
   capitals: lowercase h/k/q/u would be spelled out as chat shorthand ("hai").
   Cases: `node scripts/math-cases.mjs` (pure, must be all green). maestro asks for this
   format only on `/vision/stream`, which only the phone calls.
+- **Study additions to the reader** (2026-09-28): `\ce{…}` chemistry (KaTeX mhchem;
+  spoken "2 H 2 plus O 2 gives 2 H 2 O"); units spoken as words, but only in plain text
+  (a formula's "4 A C" must never become "4 amperes"); ```plot blocks drawn natively by
+  `components/plot.tsx` with `math.evaluator` (react-native-svg, offline; y range from the
+  middle 90% so tan x stays readable). **Hint mode** (`lib/hint.ts`): an ask with
+  "hint"/"one step at a time" shows a solution up to its first $$ step; "next" (typed,
+  spoken) or the Next step button reveals one more with no network call. "Read this
+  aloud" answers are spoken even with auto-speak off. Practice sessions (maestro
+  study/) reuse the tutor's `tutor_card` A–D buttons; a deck-ready report is written into
+  the thread by maestro and shows when the conversation is reopened (no push).
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba
