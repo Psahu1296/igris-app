@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { AlertCircle, Check, Cloud, Copy, User, Volume2, Zap } from 'lucide-react-native';
+import { AlertCircle, Check, ChevronsDown, Cloud, Copy, User, Volume2, Zap } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
@@ -19,6 +19,7 @@ import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
 import type { TurnState } from '@/lib/conversation/turn-state';
 import type { Contact, Conversation } from '@/lib/device';
+import { revealed } from '@/lib/hint';
 import { useSpeakingId, useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
 
@@ -28,6 +29,7 @@ export function Turn({
   onReply,
   onCancelCall,
   onAnswer,
+  onNextStep,
 }: {
   turn: TurnState;
   /** Tap an option on this turn's quiz card. Only the latest turn gets it. */
@@ -38,6 +40,8 @@ export function Turn({
   onReply?: (turnId: string, target: Conversation, text: string) => void;
   /** Cancel on any pending card — a call, a countdown or a reply. */
   onCancelCall?: (turnId: string) => void;
+  /** Hint mode: show the next step of this turn's solution. */
+  onNextStep?: (turnId: string) => void;
 }) {
   // A turn is a record of what one brain did, so it keeps that brain's colour — not
   // the current mode's. See Tint in theme.ts.
@@ -59,10 +63,14 @@ export function Turn({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Hint mode shows the solution a step at a time (lib/hint.ts).
+  const shown = turn.answer && turn.reveal ? revealed(turn.answer, turn.reveal) : null;
+  const visible = shown?.text ?? turn.answer;
+
   const speakAnswer = () => {
-    if (!turn.answer) return;
+    if (!visible) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void speech.speak(turn.answer, turn.id, true);
+    void speech.speak(visible, turn.id, true);
   };
 
   return (
@@ -130,7 +138,23 @@ export function Turn({
           </View>
 
           {/* Response Text */}
-          {turn.answer ? <Markdown text={turn.answer} accent={accent} /> : null}
+          {visible ? <Markdown text={visible} accent={accent} /> : null}
+
+          {shown?.hidden ? (
+            <PressableScale
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onNextStep?.(turn.id);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Show the next step"
+              style={[styles.nextStep, { borderColor: accent + '55' }]}>
+              <ChevronsDown size={15} color={accent} />
+              <Meta style={[styles.actionText, { color: accent }]}>
+                {`Next step · ${shown.hidden} left — or say "next"`}
+              </Meta>
+            </PressableScale>
+          ) : null}
 
           {turn.device ? (
             <DeviceCard
@@ -209,6 +233,16 @@ export function Turn({
 }
 
 const styles = StyleSheet.create({
+  nextStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Space.xs,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.xs,
+  },
   turnContainer: {
     marginBottom: Space.xl,
     paddingHorizontal: Gutter,

@@ -32,6 +32,8 @@ export type TurnState = {
   scout?: string | null;
   /** This turn is a Scout report that arrived by itself: no ask, so no bubble of yours. */
   report?: boolean;
+  /** Hint mode (lib/hint.ts): how many $$ steps of the answer are showing; unset = all. */
+  reveal?: number | null;
 };
 
 /** A turn with nothing happened yet; callers override what they know. */

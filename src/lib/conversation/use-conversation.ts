@@ -5,6 +5,7 @@ import { AppState, ToastAndroid } from 'react-native';
 import { callContact, type Contact, type Conversation, type DeviceStep } from '@/lib/device';
 import { COUNTDOWN_MS, type Favourite } from '@/lib/favourites';
 import { isEmergency } from '@/lib/emergency';
+import { isNext, revealed, stepCount, wantsHint } from '@/lib/hint';
 import { AuthError, splitDrawn, streamChat, type Photo } from '@/lib/maestro';
 import { sendReply } from '@/lib/notifications';
 import { isFinished, scoutJobs, splitScout } from '@/lib/scout';
@@ -262,6 +263,20 @@ export function useConversation() {
     [lane, confirmCall]
   );
 
+  // Hint mode: show one more step of a solution and say just that step. On the phone —
+  // the whole solution is already here (lib/hint.ts).
+  const nextStep = useCallback(
+    (turnId: string) => {
+      const turn = turns.find((t) => t.id === turnId);
+      if (!turn?.answer || !turn.reveal) return;
+      const before = revealed(turn.answer, turn.reveal).text;
+      const after = revealed(turn.answer, turn.reveal + 1).text;
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, reveal: (t.reveal ?? 0) + 1 } : t)));
+      void speech.speak(after.slice(before.length), turnId, true);
+    },
+    [turns, speech]
+  );
+
   const ask = useCallback(
     async (message: string, extra?: AskExtra) => {
       // An emergency is answered here and now: no pending card, no lane probe, no
@@ -288,6 +303,12 @@ export function useConversation() {
         if (step.candidates?.length === 1) return void confirmCall(pending.id, step.candidates[0]);
       }
       if (pending && !extra?.photo && NO.test(message.trim())) return cancelCall(pending.id);
+
+      // "Next step" while a hinted solution still has steps hidden: reveal one, no network.
+      const hinted = [...turns].reverse().find((t) => t.answer && t.reveal);
+      if (hinted && !extra?.photo && isNext(message) && revealed(hinted.answer!, hinted.reveal!).hidden) {
+        return nextStep(hinted.id);
+      }
 
       // Auto on Render may be stale: one probe that caught the Mac mid-restart kept the
       // app on Render for the rest of the session, and Render's maestro lacks the Mac's
@@ -349,13 +370,17 @@ export function useConversation() {
           onEvent: (event) => {
             if (event.kind === 'answer') {
               answered = true;
+              // Asked for a hint: the method and the first step only (lib/hint.ts).
+              const reveal = wantsHint(message) && stepCount(event.message) >= 2 ? 1 : null;
               patch({
                 answer: event.message,
+                reveal,
                 status: null,
                 phase: null,
                 elapsedMs: Date.now() - startedAt,
               });
-              if (!phoneSpeaks && autoSpeakOn()) void speech.speak(event.message, id);
+              const said = reveal ? revealed(event.message, reveal).text : event.message;
+              if (!phoneSpeaks && autoSpeakOn()) void speech.speak(said, id);
             } else if (event.kind === 'device') {
               phoneSpeaks =
                 runDeviceAction(event.action, {
@@ -398,7 +423,7 @@ export function useConversation() {
         setBusy(false);
       }
     },
-    [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, confirmReply, cancelCall, startCountdown]
+    [lane, lanePref, refreshLane, sessionId, speech, turns, confirmCall, confirmReply, cancelCall, startCountdown, nextStep]
   );
 
   // Start on a todo's alarm screen (src/app/todo.tsx): a fresh conversation, opened
@@ -426,5 +451,5 @@ export function useConversation() {
     });
   }, [sessionId, sessionIsNew, ask]);
 
-  return { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall };
+  return { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall, nextStep };
 }

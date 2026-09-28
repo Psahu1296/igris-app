@@ -1,4 +1,4 @@
-// The maths reader's cases (src/lib/math.ts): what a formula shows as text and how it
+// The maths reader's cases (src/lib/math.ts, and hint mode in src/lib/hint.ts): what a formula shows as text and how it
 // is said aloud. `node scripts/math-cases.mjs`; exits 1 on any miss. math.ts has no
 // imports, so it is transpiled with the TypeScript already installed and run as-is.
 import { readFileSync } from 'node:fs';
@@ -6,12 +6,17 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
-const source = readFileSync(new URL('../src/lib/math.ts', import.meta.url), 'utf8');
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-});
-const math = {};
-new Function('exports', outputText)(math);
+/** A dependency-free module from src/, transpiled and run as CommonJS. */
+function load(path) {
+  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  });
+  const exports = {};
+  new Function('exports', outputText)(exports);
+  return exports;
+}
+const math = load('../src/lib/math.ts');
 
 // [latex, text, speech]. The first ones are the owner's own questions (2026-09-28).
 const CASES = [
@@ -82,5 +87,23 @@ if (JSON.stringify(rows) !== JSON.stringify(['A equals B plus C', 'equals 5'])) 
   failed++;
   console.log(`MISS aligned rows: ${JSON.stringify(rows)}`);
 }
+// Hint mode (src/lib/hint.ts): what shows after N steps, and the words that ask for it.
+const hint = load('../src/lib/hint.ts');
+const solved = 'Use the formula.\n$$a = b$$\n$$= c$$\nSo\n$$= d$$\n**d**';
+const HINTS = [
+  [hint.revealed(solved, 1), { text: 'Use the formula.\n$$a = b$$', hidden: 2 }],
+  [hint.revealed(solved, 2), { text: 'Use the formula.\n$$a = b$$\n$$= c$$', hidden: 1 }],
+  [hint.revealed(solved, 3), { text: solved, hidden: 0 }],
+  [['give me a hint', 'one step at a time', 'ek ek step batao', 'solve this'].map(hint.wantsHint), [true, true, true, false]],
+  [['next', 'Next step', 'ok next', 'aage', 'next question please'].map(hint.isNext), [true, true, true, true, false]],
+];
+for (const [got, want] of HINTS) {
+  if (JSON.stringify(got) !== JSON.stringify(want)) {
+    failed++;
+    console.log(`MISS hint\n  got:  ${JSON.stringify(got)}\n  want: ${JSON.stringify(want)}`);
+  }
+}
+CASES.push(...HINTS);
+
 console.log(`${CASES.length + 1 - failed}/${CASES.length + 1} math cases`);
 process.exit(failed ? 1 : 0);

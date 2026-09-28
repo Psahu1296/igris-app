@@ -41,7 +41,7 @@ export default function Transcript() {
     openSession,
     startSession,
   } = useSession();
-  const { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall } = useConversation();
+  const { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall, nextStep } = useConversation();
   const [laneMenuOpen, setLaneMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [copiedChat, setCopiedChat] = useState(false);
@@ -164,6 +164,7 @@ export default function Transcript() {
                 onCall={confirmCall}
                 onReply={confirmReply}
                 onCancelCall={cancelCall}
+                onNextStep={nextStep}
                 onAnswer={i === turns.length - 1 && !busy ? (text) => void ask(text) : undefined}
               />
             ))
