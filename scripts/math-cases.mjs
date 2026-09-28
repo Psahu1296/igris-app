@@ -47,6 +47,35 @@ for (const [latex, text, speech] of CASES) {
     console.log(`MISS ${latex}\n  text:   ${gotText}\n  want:   ${text}\n  speech: ${gotSpeech}\n  want:   ${speech}`);
   }
 }
+// Chemistry (\ce{}) and units.
+const MORE = [
+  [String.raw`\ce{2H2 + O2 -> 2H2O}`, '2H₂ + O₂ → 2H₂O', '2 H 2 plus O 2 gives 2 H 2 O'],
+  [String.raw`\ce{NaCl(aq)}`, 'NaCl(aq)', 'N A C L aqueous'],
+  [String.raw`\ce{Fe^{3+} + 3OH- -> Fe(OH)3}`, 'Fe³⁺ + 3OH⁻ → Fe(OH)₃', 'F E 3 plus plus 3 O H minus gives F E O H 3'],
+  [String.raw`v = 20\,\text{km/h}`, 'v = 20 km/h', 'V equals 20 kilometres per hour'],
+];
+for (const [latex, text, speech] of MORE) {
+  const gotText = math.mathToText(latex);
+  const gotSpeech = math.mathToSpeech(latex);
+  if (gotText !== text || gotSpeech !== speech) {
+    failed++;
+    console.log(`MISS ${latex}\n  text:   ${gotText}\n  want:   ${text}\n  speech: ${gotSpeech}\n  want:   ${speech}`);
+  }
+}
+const UNITS = [
+  ['The ball falls at 9.8 m/s^2 for 3 s.', 'The ball falls at 9.8 metres per second squared for 3 seconds.'],
+  ['It runs 60 km/h, weighs 2 kg and is at 25 °C.', 'It runs 60 kilometres per hour, weighs 2 kilograms and is at 25 degrees Celsius.'],
+  ['Option A is 5 marks.', 'Option A is 5 marks.'],
+];
+for (const [text, want] of UNITS) {
+  const got = math.speakUnits(text);
+  if (got !== want) {
+    failed++;
+    console.log(`MISS units ${text}\n  got:  ${got}\n  want: ${want}`);
+  }
+}
+CASES.push(...MORE, ...UNITS); // counted in the total
+
 // An aligned block comes apart into one spoken line per row.
 const rows = math.mathToSpeechLines(String.raw`\begin{aligned} a &= b + c \\ &= 5 \end{aligned}`);
 if (JSON.stringify(rows) !== JSON.stringify(['A equals B plus C', 'equals 5'])) {

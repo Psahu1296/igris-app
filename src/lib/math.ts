@@ -22,6 +22,7 @@ type Node =
   | { k: 'sym'; show: string; say: string; rel?: boolean; op?: boolean }
   | { k: 'fn'; name: string }
   | { k: 'text'; v: string }
+  | { k: 'chem'; v: string }
   | { k: 'group'; body: Node[] }
   | { k: 'paren'; open: string; close: string; body: Node[] }
   | { k: 'frac'; num: Node[]; den: Node[] }
@@ -296,6 +297,7 @@ class Parser {
       if (name === 'begin' && /array|tabular/.test(env)) this.raw(); // its column spec
       return null;
     }
+    if (name === 'ce' || name === 'pu') return { k: 'chem', v: this.raw() };
     if (TEXT_CMD.has(name)) {
       const text = this.raw();
       if (name === 'operatorname') return { k: 'fn', name: text };
@@ -380,6 +382,8 @@ function showNode(n: Node): string {
       return n.name === 'csc' ? 'cosec' : n.name;
     case 'text':
       return n.v;
+    case 'chem':
+      return chemToText(n.v);
     case 'group':
       return show(n.body);
     case 'paren':
@@ -456,7 +460,9 @@ function sayNode(n: Node, closes: boolean): string {
     case 'fn':
       return FN_SAY[n.name] ?? n.name;
     case 'text':
-      return n.v;
+      return speakUnits(n.v, true);
+    case 'chem':
+      return chemToSpeech(n.v);
     case 'group':
       return say(n.body, closes);
     case 'break':
@@ -535,6 +541,74 @@ export function mathToSpeechLines(latex: string): string[] {
 /** A formula said aloud: "\frac{\sin\theta}{1+\cos\theta}" → "the fraction sine theta, over 1 plus cos theta". */
 export function mathToSpeech(latex: string): string {
   return mathToSpeechLines(latex).join(', ');
+}
+
+// ── Chemistry (\ce{…}, KaTeX's mhchem) ──────────────────────────────────────
+
+const STATE: Record<string, string> = { s: 'solid', l: 'liquid', g: 'gas', aq: 'aqueous' };
+const ARROW: [RegExp, string, string][] = [
+  [/<=>|<->|⇌/g, ' ⇌ ', ' is in equilibrium with '],
+  [/->|→/g, ' → ', ' gives '],
+  [/<-/g, ' ← ', ' comes from '],
+];
+const charge = (c: string) => c.replace(/^(\d*)([+-])$/, (_, n, sign) => `${n || ''} ${sign === '+' ? 'plus' : 'minus'}`).trim();
+
+/** "2H2 + O2 -> 2H2O" → "2H₂ + O₂ → 2H₂O". Pure. */
+export function chemToText(ce: string): string {
+  let t = ce;
+  for (const [re, shown] of ARROW) t = t.replace(re, shown);
+  t = t
+    .replace(/\^\{?([0-9]*[+-])\}?/g, (_, c) => mapAll(c.replace('-', '−'), SUP) ?? `^${c}`)
+    // mhchem's bare charge: "OH-", "NH4+" — a sign at the end of a formula.
+    .replace(/([A-Za-z)\d])([+-])(?=\s|$)/g, (_, a, sign) => a + (sign === '+' ? '⁺' : '⁻'))
+    .replace(/([A-Za-z)\]])(\d+)/g, (_, a, d) => a + (mapAll(d, SUB) ?? d))
+    .replace(/_\{?(\d+)\}?/g, (_, d) => mapAll(d, SUB) ?? d);
+  return t.replace(/\s{2,}/g, ' ').trim();
+}
+
+/** "2H2 + O2 -> 2H2O" → "2 H 2 plus O 2 gives 2 H 2 O": the letters of a formula said one
+ * by one, as a classroom reads NaCl — "N A C L". Pure. */
+export function chemToSpeech(ce: string): string {
+  let t = ce;
+  for (const [re, , said] of ARROW) t = t.replace(re, said);
+  const words = t
+    .replace(/\(\s*(s|l|g|aq)\s*\)/g, (_, st) => ` ${STATE[st]} `)
+    .replace(/\^\{?([0-9]*[+-])\}?/g, (_, c) => ` ${charge(c)} `)
+    .replace(/([A-Za-z)\d])([+-])(?=\s|$)/g, (_, a, sign) => `${a} ${sign === '+' ? 'plus' : 'minus'} `)
+    .replace(/\s\+\s/g, ' plus ')
+    .replace(/_\{?(\d+)\}?/g, ' $1 ')
+    .replace(/([A-Z][a-z]?)/g, (el) => ` ${el.toUpperCase().split('').join(' ')} `)
+    .replace(/(\d+)/g, ' $1 ')
+    .replace(/[{}()]/g, ' ');
+  return words.replace(/\s{2,}/g, ' ').trim();
+}
+
+// ── Units ────────────────────────────────────────────────────────────────────
+
+// Longest first, so "m/s^2" wins over "m/s" and "m". A unit only counts after a number
+// (or alone in \text{}), so "m" in a word or "A" as an option letter stays as it is.
+const UNITS: [string, string][] = [
+  ['m/s^2', 'metres per second squared'], ['m/s²', 'metres per second squared'],
+  ['km/h', 'kilometres per hour'], ['km/hr', 'kilometres per hour'], ['kmph', 'kilometres per hour'],
+  ['m/s', 'metres per second'], ['cm^2', 'square centimetres'], ['cm²', 'square centimetres'],
+  ['m^2', 'square metres'], ['m²', 'square metres'], ['cm^3', 'cubic centimetres'], ['cm³', 'cubic centimetres'],
+  ['m^3', 'cubic metres'], ['m³', 'cubic metres'], ['°C', 'degrees Celsius'], ['kg', 'kilograms'],
+  ['km', 'kilometres'], ['cm', 'centimetres'], ['mm', 'millimetres'], ['mg', 'milligrams'], ['mL', 'millilitres'],
+  ['ml', 'millilitres'], ['kJ', 'kilojoules'], ['kW', 'kilowatts'], ['kWh', 'kilowatt hours'], ['Hz', 'hertz'],
+  ['Pa', 'pascals'], ['mol', 'moles'], ['min', 'minutes'], ['hr', 'hours'], ['Ω', 'ohms'],
+  ['m', 'metres'], ['g', 'grams'], ['s', 'seconds'], ['N', 'newtons'], ['J', 'joules'], ['W', 'watts'],
+  ['V', 'volts'], ['A', 'amperes'], ['K', 'kelvin'], ['L', 'litres'],
+];
+UNITS.sort((a, b) => b[0].length - a[0].length);
+const esc = (u: string) => u.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const AFTER_NUMBER = new RegExp(`(\\d)\\s*(${UNITS.map(([u]) => esc(u)).join('|')})(?![A-Za-z0-9])`, 'g');
+const UNIT_SAY = new Map(UNITS);
+
+/** Units said as words: "9.8 m/s²" → "9.8 metres per second squared". `alone`: the
+ * whole text is a unit (a formula's \text{km/h}), with no number before it. Pure. */
+export function speakUnits(text: string, alone = false): string {
+  if (alone && UNIT_SAY.has(text.trim())) return UNIT_SAY.get(text.trim())!;
+  return text.replace(AFTER_NUMBER, (_, d, u) => `${d} ${UNIT_SAY.get(u)}`);
 }
 
 /** Bare LaTeX the model left outside dollars: worth reading as maths, not as backslashes. */

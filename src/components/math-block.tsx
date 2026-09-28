@@ -13,7 +13,8 @@ import { mathToText } from '@/lib/math';
  *
  * Built like components/mermaid.tsx: the LaTeX is model-written, so it goes in as JSON,
  * KaTeX runs with trust off (no \href, no \includegraphics), and the page may not
- * navigate. KaTeX loads from jsDelivr, pinned to a minor version. Offline, or if it
+ * navigate. KaTeX loads from jsDelivr, pinned to a minor version, with its mhchem add-on
+ * for chemical equations (\ce{2H2 + O2 -> 2H2O}). Offline, or if it
  * fails, each step is shown natively as Unicode text (lib/math.ts).
  */
 export function MathBlock({ steps, accent }: { steps: string[]; accent: string }) {
@@ -45,6 +46,7 @@ html,body{margin:0;padding:0;background:transparent;color:#F5F2EC}
 </style>
 </head><body><div id="d"></div>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/mhchem.min.js"></script>
 <script>
 (function(){
   const post = (m) => window.ReactNativeWebView.postMessage(JSON.stringify(m));

@@ -1,5 +1,5 @@
 import { withoutEmoji } from '@/lib/device';
-import { BARE_LATEX, mathToSpeech, mathToSpeechLines, mathToText } from '@/lib/math';
+import { BARE_LATEX, mathToSpeech, mathToSpeechLines, mathToText, speakUnits } from '@/lib/math';
 
 /**
  * A small Markdown reader for Igris's answers — enough of GitHub's flavour to lay a
@@ -256,11 +256,20 @@ export function spans(text: string, inherit: Omit<Span, 'text'> = {}): Span[] {
   return out;
 }
 
-/** Text as it is SAID: marks gone, formulas as words. LaTeX the model left outside
- * dollars is read as maths too, rather than as backslashes and braces. */
+/** Text as it is SAID: marks gone, formulas as words, units as words ("9.8 m/s²").
+ * LaTeX the model left outside dollars is read as maths too, rather than as backslashes
+ * and braces. Units only in plain text: a formula already said "4 A C", not "4 amperes". */
 const plain = (text: string) =>
   spans(text)
-    .map((s) => (s.math !== undefined ? mathToSpeech(s.math) : !s.code && BARE_LATEX.test(s.text) ? mathToSpeech(s.text) : s.text))
+    .map((s) =>
+      s.math !== undefined
+        ? mathToSpeech(s.math)
+        : s.code
+          ? s.text
+          : BARE_LATEX.test(s.text)
+            ? mathToSpeech(s.text)
+            : speakUnits(s.text)
+    )
     .join('');
 
 // ── Speech ───────────────────────────────────────────────────────────────────
