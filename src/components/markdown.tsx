@@ -2,6 +2,7 @@ import { ArrowDown, Square, SquareCheck } from 'lucide-react-native';
 import { Fragment } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
+import { MathBlock } from '@/components/math-block';
 import { Mermaid } from '@/components/mermaid';
 import { Answer } from '@/components/typography';
 import { Font, Palette, Space, Type } from '@/constants/theme';
@@ -65,6 +66,8 @@ function BlockView({ block, accent }: { block: Block; accent: string }) {
       return <Flow chains={block.chains} accent={accent} />;
     case 'mermaid':
       return <Mermaid source={block.text} accent={accent} />;
+    case 'math':
+      return <MathBlock steps={block.steps} accent={accent} />;
     case 'rule':
       return <View style={styles.rule} />;
   }
@@ -80,6 +83,7 @@ function Inline({ text, accent, sans = false }: { text: string; accent: string; 
         if (s.italic) style.push(styles.italic);
         if (s.strike) style.push(styles.strike);
         if (s.code) style.push(styles.inlineCode);
+        if (s.math !== undefined) style.push(styles.inlineMath);
         if (s.href) style.push({ color: accent, textDecorationLine: 'underline' });
         return (
           <Text
@@ -189,6 +193,8 @@ const styles = StyleSheet.create({
     color: Palette.text,
     backgroundColor: Palette.surfaceGlassHover,
   },
+  // Plex, not the serif: its superscripts and Greek sit level with the digits.
+  inlineMath: { fontFamily: Font.ui, color: Palette.text },
   quote: { borderLeftWidth: 3, paddingLeft: Space.md, paddingVertical: 2 },
   quoteText: { fontFamily: Font.voiceItalic, color: Palette.muted, ...Type.answer },
   list: { gap: Space.sm },

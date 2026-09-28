@@ -40,6 +40,8 @@ jobs:
 
       - run: npx expo lint
 
+      - run: node scripts/math-cases.mjs
+
       - name: Restore release keystore
         run: echo "${{ secrets.IGRIS_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/igris-release.jks"
 

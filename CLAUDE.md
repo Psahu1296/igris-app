@@ -18,6 +18,7 @@ Full plan and the 16 locked decisions: `../.scratch/igris-app/PLAN.md`.
 | Typecheck | `npx tsc --noEmit` | run before calling anything done. Both workflows run it + lint before shipping |
 | Lint | `npx expo lint` | |
 | Doctor | `npx expo-doctor` | dependency/config drift |
+| Math cases | `node scripts/math-cases.mjs` | the maths reader's text + speech (pure, no device) |
 | Add a package | `npx expo install <pkg>` | **never** `npm i` — this resolves SDK-compatible versions |
 | Dev build (local) | `./gradlew assembleDebug` in `android/` | ~3 min after the first run |
 | Dev build (cloud) | `npx eas-cli build -p android --profile development` | ~15 min build, but the free queue has hit 50+ min |
@@ -410,6 +411,16 @@ released with no underruns. Download to speech took under 20s on 5G.
   Hand-written parser, no Markdown library: the same blocks are also turned back into
   sentences for speech (`toSpeech`, applied first in `tts.ts`), so nobody hears
   asterisks and a table is read row by row. Plain text renders as before.
+- **Maths is LaTeX, read two ways** (added 2026-09-28, after a photographed trig answer
+  was unreadable and read aloud brace by brace). `$$…$$` lines are working steps: a run
+  of them is ONE `math` block, typeset by KaTeX in one WebView
+  (`components/math-block.tsx`, katex@0.16 from jsDelivr, trust off, Unicode fallback
+  offline). `$…$` in a sentence becomes Unicode text (sin⁻¹(1/√2)). Speech comes from
+  `lib/math.ts` — our own reader, not Speech Rule Engine, which would only run inside the
+  WebView — saying "sine inverse of 1 over root 2". Single letters are spoken as
+  capitals: lowercase h/k/q/u would be spelled out as chat shorthand ("hai").
+  Cases: `node scripts/math-cases.mjs` (pure, must be all green). maestro asks for this
+  format only on `/vision/stream`, which only the phone calls.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

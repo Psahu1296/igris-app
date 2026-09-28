@@ -1,4 +1,5 @@
 import { withoutEmoji } from '@/lib/device';
+import { BARE_LATEX, mathToSpeech, mathToSpeechLines, mathToText } from '@/lib/math';
 
 /**
  * A small Markdown reader for Igris's answers — enough of GitHub's flavour to lay a
@@ -14,6 +15,10 @@ import { withoutEmoji } from '@/lib/device';
  * natively as boxes and arrows, and ```mermaid blocks: a straight-line flowchart is
  * drawn the same way, anything else by mermaid itself in a WebView.
  *
+ * Maths is LaTeX (lib/math.ts): $$…$$ or \[…\] on its own lines is a working step, drawn
+ * by KaTeX, and consecutive steps become one `math` block (one WebView, not eight);
+ * $…$ or \(…\) inside a sentence becomes Unicode text (sin²θ) and is spoken as words.
+ *
  * Plain text is valid Markdown: an answer with no markup is one paragraph per line
  * group, exactly as it looked before.
  */
@@ -26,6 +31,7 @@ export type Block =
   | { type: 'code'; lang: string; text: string }
   | { type: 'flow'; chains: string[][] }
   | { type: 'mermaid'; text: string }
+  | { type: 'math'; steps: string[] }
   | { type: 'table'; header: string[]; rows: string[][] }
   | { type: 'rule' };
 
@@ -35,6 +41,8 @@ const FENCE = /^\s*(```|~~~)\s*([\w-]*)\s*$/;
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(?:\[([ xX])\]\s+)?(.*)$/;
+// Display maths: a line that opens with $$ or \[.
+const MATH_OPEN = /^\s*(\$\$|\\\[)/;
 const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
 const cells = (line: string) =>
@@ -61,6 +69,26 @@ export function parse(markdown: string): Block[] {
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
       i++; // the closing fence (or the end)
       blocks.push(codeBlock(fence[2].toLowerCase(), body.join('\n')));
+      continue;
+    }
+    const open = MATH_OPEN.exec(line);
+    if (open) {
+      const close = open[1] === '$$' ? '$$' : '\\]';
+      let body = line.slice(line.indexOf(open[1]) + open[1].length);
+      let end = body.indexOf(close);
+      while (end < 0 && ++i < lines.length) {
+        body += '\n' + lines[i];
+        end = body.indexOf(close);
+      }
+      i++;
+      const tex = (end < 0 ? body : body.slice(0, end)).trim();
+      const after = end < 0 ? '' : body.slice(end + close.length).trim();
+      const last = blocks[blocks.length - 1];
+      if (tex) {
+        if (last?.type === 'math') last.steps.push(tex);
+        else blocks.push({ type: 'math', steps: [tex] });
+      }
+      if (after) blocks.push({ type: 'paragraph', text: after });
       continue;
     }
     const heading = HEADING.exec(line);
@@ -113,6 +141,7 @@ export function parse(markdown: string): Block[] {
       i < lines.length &&
       lines[i].trim() &&
       !FENCE.test(lines[i]) &&
+      !MATH_OPEN.test(lines[i]) &&
       !HEADING.test(lines[i]) &&
       !ITEM.test(lines[i]) &&
       !/^\s*>/.test(lines[i])
@@ -187,12 +216,16 @@ export type Span = {
   code?: boolean;
   strike?: boolean;
   href?: string;
+  /** The LaTeX source of an inline formula; `text` is its Unicode form. */
+  math?: string;
 };
 
 // Underscore italics need a non-word character (or the start) before the opening _, so
 // snake_case_names stay whole; that character is captured in group 1 and put back.
+// Inline maths first: $$…$$, \(…\), and $…$ — the last with no space inside either
+// dollar and no digit after it, so "$5 and $10" stays money.
 const INLINE =
-  /(\*\*[^*]+?\*\*|__[^_]+?__|`[^`]+?`|~~[^~]+?~~|\[[^\]]+?\]\([^)\s]+?\)|\*(?!\s)[^*]+?\*|(^|[^\w])_(?!\s)[^_]+?_(?![\w]))/;
+  /(\$\$[^$]+?\$\$|\\\(.+?\\\)|\$(?![\s$])(?:[^$\n]*?[^\s\\$])?\$(?!\d)|\*\*[^*]+?\*\*|__[^_]+?__|`[^`]+?`|~~[^~]+?~~|\[[^\]]+?\]\([^)\s]+?\)|\*(?!\s)[^*]+?\*|(^|[^\w])_(?!\s)[^_]+?_(?![\w]))/;
 
 export function spans(text: string, inherit: Omit<Span, 'text'> = {}): Span[] {
   const out: Span[] = [];
@@ -208,7 +241,10 @@ export function spans(text: string, inherit: Omit<Span, 'text'> = {}): Span[] {
     const start = m.index + lead.length;
     if (start > 0) out.push({ ...inherit, text: rest.slice(0, start) });
     const tok = m[0].slice(lead.length);
-    if (tok.startsWith('`')) out.push({ ...inherit, code: true, text: tok.slice(1, -1) });
+    if (tok.startsWith('$') || tok.startsWith('\\(')) {
+      const tex = tok.replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$/g, '');
+      out.push({ ...inherit, text: mathToText(tex), math: tex });
+    } else if (tok.startsWith('`')) out.push({ ...inherit, code: true, text: tok.slice(1, -1) });
     else if (tok.startsWith('**') || tok.startsWith('__')) out.push(...spans(tok.slice(2, -2), { ...inherit, bold: true }));
     else if (tok.startsWith('~~')) out.push(...spans(tok.slice(2, -2), { ...inherit, strike: true }));
     else if (tok.startsWith('[')) {
@@ -220,9 +256,11 @@ export function spans(text: string, inherit: Omit<Span, 'text'> = {}): Span[] {
   return out;
 }
 
+/** Text as it is SAID: marks gone, formulas as words. LaTeX the model left outside
+ * dollars is read as maths too, rather than as backslashes and braces. */
 const plain = (text: string) =>
   spans(text)
-    .map((s) => s.text)
+    .map((s) => (s.math !== undefined ? mathToSpeech(s.math) : !s.code && BARE_LATEX.test(s.text) ? mathToSpeech(s.text) : s.text))
     .join('');
 
 // ── Speech ───────────────────────────────────────────────────────────────────
@@ -262,6 +300,10 @@ export function toSpeech(markdown: string): string {
         break;
       case 'mermaid':
         out.push('The diagram is on screen.');
+        break;
+      case 'math':
+        // A step per sentence: the pause between them is what lets an ear follow working.
+        for (const step of b.steps) out.push(...mathToSpeechLines(step).map((l) => sentence(l)));
         break;
       case 'code':
       case 'rule':
