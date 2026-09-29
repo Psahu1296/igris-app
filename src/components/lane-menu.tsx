@@ -3,6 +3,7 @@ import { Check, Cloud, Radar, Zap } from 'lucide-react-native';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ModelPicker } from '@/components/model-picker';
 import { Meta } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import type { Lane, LanePreference } from '@/lib/maestro';
@@ -128,6 +129,9 @@ export function LaneMenu({
             </Meta>
           </View>
         ) : null}
+
+        {/* Only the Mac has Ollama; Render's models are fixed by its own env. */}
+        {lane === 'local' && reachable ? <ModelPicker lane={lane} active={visible} /> : null}
       </View>
     </Modal>
   );
