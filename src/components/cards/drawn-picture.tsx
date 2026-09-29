@@ -12,10 +12,10 @@ import { drawnSource, type Drawn, type Lane } from '@/lib/maestro';
 
 /**
  * A picture Igris drew, loaded from the Mac with the session token. Square, as
- * maestro draws it (imagine.IMAGE_SIZE). A failed load says so instead of leaving a
+ * maestro draws it (imagine.IMAGE_SIZE), unless `aspect` (width / height) says otherwise. A failed load says so instead of leaving a
  * blank box — most often a conversation reopened on Render, which has no pictures.
  */
-export function DrawnPicture({ lane, picture }: { lane: Lane; picture: Drawn }) {
+export function DrawnPicture({ lane, picture, aspect = 1 }: { lane: Lane; picture: Drawn; aspect?: number }) {
   const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -30,12 +30,12 @@ export function DrawnPicture({ lane, picture }: { lane: Lane; picture: Drawn }) 
   }, [lane, picture.name]);
 
   if (failed) return <Meta style={styles.drawnFailed}>The picture is on the Mac and could not be loaded.</Meta>;
-  if (!source) return <View style={styles.drawn} />;
+  if (!source) return <View style={[styles.drawn, { aspectRatio: aspect }]} />;
   return (
     <View>
       <Image
         source={source}
-        style={styles.drawn}
+        style={[styles.drawn, { aspectRatio: aspect }]}
         contentFit="cover"
         transition={200}
         accessibilityLabel={picture.prompt || 'A picture Igris drew'}

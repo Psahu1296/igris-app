@@ -1,10 +1,12 @@
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, ChevronLeft, Heart, Trash2 } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Heart, Trash2, UserRound } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
@@ -12,16 +14,23 @@ import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
   fetchCompanion,
   forgetCompanion,
+  PHOTO_ASPECT,
+  setFace,
   streamCompanion,
+  withoutTag,
   type CompanionMessage,
+  type CompanionPhoto,
 } from '@/lib/companion';
+import { drawingShare } from '@/lib/drawing-steps';
+import { drawnSource, type Lane } from '@/lib/maestro';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useSession } from '@/state/session';
 
 /**
  * The owner's private companion chat (lib/companion.ts). A messaging app, not an Igris
  * transcript: bubbles, her words appearing as she types, one endless conversation. Mac
- * only, because her model is local.
+ * only, because her model is local. Her photos arrive after her words (maestro draws them
+ * from her base face, ~75 s); any of them can be made the new base face.
  */
 export default function CompanionScreen() {
   const { lane } = useSession();
@@ -33,6 +42,9 @@ export default function CompanionScreen() {
   // Her reply in flight: null = idle, '' = typing, text = words so far.
   const [live, setLive] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [face, setFaceName] = useState<string | null>(null);
+  // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
+  const [snapping, setSnapping] = useState<{ done: number; total: number } | null>(null);
   const lastSend = useRef(0);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
@@ -45,6 +57,7 @@ export default function CompanionScreen() {
         if (!alive) return;
         setName(c.name);
         setModel(c.model);
+        setFaceName(c.face);
         setMessages(c.messages);
       })
       .catch((e: unknown) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
@@ -57,7 +70,7 @@ export default function CompanionScreen() {
     const text = draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
-    if (!text || live !== null || now - lastSend.current < 800) return;
+    if (!text || live !== null || snapping || now - lastSend.current < 800) return;
     lastSend.current = now;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDraft('');
@@ -66,6 +79,14 @@ export default function CompanionScreen() {
     setMessages((m) => [...m, { role: 'you', text, at }]);
     setLive('');
     let words = '';
+    const herAt = new Date(Date.now() + 1).toISOString();
+    // Her photo joins her words' bubble, or stands alone when she sent only a photo.
+    const attach = (image: CompanionPhoto) =>
+      setMessages((m) =>
+        m.some((msg) => msg.at === herAt)
+          ? m.map((msg) => (msg.at === herAt ? { ...msg, image } : msg))
+          : [...m, { role: 'her', text: '', at: herAt, image }]
+      );
     try {
       await streamCompanion({
         lane,
@@ -75,8 +96,18 @@ export default function CompanionScreen() {
             words += event.text;
             setLive(words);
           } else if (event.kind === 'reply') {
-            setMessages((m) => [...m, { role: 'her', text: event.text, at: new Date().toISOString() }]);
+            if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt }]);
             setLive(null);
+          } else if (event.kind === 'photoStarted') {
+            setSnapping({ done: 0, total: 0 });
+          } else if (event.kind === 'progress') {
+            setSnapping({ done: event.done, total: event.total });
+          } else if (event.kind === 'photo') {
+            attach(event.photo);
+            // The first photo ever also made her base face on the Mac.
+            setFaceName((f) => f ?? event.photo.name);
+          } else if (event.kind === 'photoFailed') {
+            setSendError(`No photo this time: ${event.message}`);
           }
         },
       });
@@ -87,8 +118,24 @@ export default function CompanionScreen() {
       setDraft(text);
     } finally {
       setLive(null);
+      setSnapping(null);
     }
-  }, [draft, live, lane]);
+  }, [draft, live, snapping, lane]);
+
+  const makeFace = (photo: CompanionPhoto) =>
+    Alert.alert(`Make this ${name}'s face?`, 'Every photo she sends from now on is drawn from this one.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Use this face',
+        onPress: () =>
+          void setFace(lane, photo.name)
+            .then(() => {
+              setFaceName(photo.name);
+              ToastAndroid.show('New photos will use this face.', ToastAndroid.SHORT);
+            })
+            .catch((e: unknown) => setSendError(e instanceof Error ? e.message : String(e))),
+      },
+    ]);
 
   const forget = () =>
     Alert.alert(`Clear everything with ${name}?`, 'The whole chat is deleted from the Mac. She will not remember it.', [
@@ -103,7 +150,7 @@ export default function CompanionScreen() {
       },
     ]);
 
-  const busy = live !== null;
+  const busy = live !== null || snapping !== null;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -117,12 +164,12 @@ export default function CompanionScreen() {
             style={styles.iconButton}>
             <ChevronLeft size={18} color={Palette.text} />
           </PressableScale>
-          <View style={styles.avatar}>
-            <Heart size={16} color={ROSE} fill={ROSE} />
-          </View>
+          <Avatar lane={lane} face={face} />
           <View style={styles.headerText}>
             <Title style={styles.name}>{name ?? ' '}</Title>
-            <Meta numberOfLines={1}>{busy ? 'typing…' : model ? `on ${model}` : ' '}</Meta>
+            <Meta numberOfLines={1}>
+              {snapping ? 'sending a photo…' : busy ? 'typing…' : model ? `on ${model}` : ' '}
+            </Meta>
           </View>
           {messages.length > 0 ? (
             <PressableScale
@@ -156,11 +203,31 @@ export default function CompanionScreen() {
               <Meta style={styles.hello}>Say hi to {name}. Only you can see this chat; it stays on the Mac.</Meta>
             ) : null}
             {messages.map((m, i) => (
-              <Bubble key={`${m.at}-${i}`} mine={m.role === 'you'} text={m.text} />
+              <Bubble
+                key={`${m.at}-${i}`}
+                lane={lane}
+                mine={m.role === 'you'}
+                text={m.text}
+                image={m.image}
+                isFace={!!m.image && m.image.name === face}
+                onMakeFace={makeFace}
+              />
             ))}
-            {busy ? (
-              live ? (
-                <Bubble mine={false} text={live} />
+            {snapping ? (
+              <View style={[styles.bubble, styles.hers, styles.snapping]}>
+                <View style={styles.snapRow}>
+                  <Camera size={14} color={ROSE} />
+                  <Meta style={styles.snapText}>
+                    {snapping.total ? `Taking a photo · ${snapping.done} of ${snapping.total}` : 'Getting ready for a photo…'}
+                  </Meta>
+                </View>
+                <View style={styles.track}>
+                  <View style={[styles.fillBar, { width: `${drawingShare(snapping) * 100}%` }]} />
+                </View>
+              </View>
+            ) : live !== null ? (
+              withoutTag(live) ? (
+                <Bubble lane={lane} mine={false} text={withoutTag(live)} />
               ) : (
                 <View style={[styles.bubble, styles.hers, styles.typing]}>
                   <TypingIndicator color={ROSE} />
@@ -196,12 +263,73 @@ export default function CompanionScreen() {
   );
 }
 
-function Bubble({ mine, text }: { mine: boolean; text: string }) {
+function Bubble({
+  lane,
+  mine,
+  text,
+  image,
+  isFace = false,
+  onMakeFace,
+}: {
+  lane: Lane;
+  mine: boolean;
+  text: string;
+  image?: CompanionPhoto;
+  isFace?: boolean;
+  onMakeFace?: (photo: CompanionPhoto) => void;
+}) {
   return (
-    <View style={[styles.bubble, mine ? styles.mine : styles.hers]}>
-      <Text selectable style={mine ? styles.mineText : styles.hersText}>
-        {text}
-      </Text>
+    <View style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
+      {image ? (
+        <View style={styles.photo}>
+          <DrawnPicture lane={lane} picture={{ name: image.name, prompt: image.scene }} aspect={PHOTO_ASPECT} />
+          {isFace ? (
+            <View style={styles.faceBadge}>
+              <UserRound size={11} color={Palette.text} />
+              <Meta style={styles.faceBadgeText}>Base face</Meta>
+            </View>
+          ) : onMakeFace ? (
+            <PressableScale
+              onPress={() => onMakeFace(image)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Make this her base face"
+              style={styles.faceBadge}>
+              <UserRound size={11} color={Palette.text} />
+              <Meta style={styles.faceBadgeText}>Use as face</Meta>
+            </PressableScale>
+          ) : null}
+        </View>
+      ) : null}
+      {text ? (
+        <Text selectable style={mine ? styles.mineText : styles.hersText}>
+          {text}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Her base face in the header, once there is one; a heart before her first photo. */
+function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
+  const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
+  useEffect(() => {
+    if (!face) return;
+    let live = true;
+    drawnSource(lane, face)
+      .then((s) => live && setSource(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [lane, face]);
+  return (
+    <View style={styles.avatar}>
+      {face && source ? (
+        <Image source={source} style={styles.avatarImage} contentFit="cover" />
+      ) : (
+        <Heart size={16} color={ROSE} fill={ROSE} />
+      )}
     </View>
   );
 }
@@ -248,7 +376,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ROSE_SOFT,
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%' },
   headerText: { flex: 1, minWidth: 0 },
   name: { fontSize: 20, lineHeight: 24 },
   list: { paddingHorizontal: Gutter - 6, paddingVertical: Space.lg, gap: Space.sm },
@@ -257,6 +387,26 @@ const styles = StyleSheet.create({
   mine: { alignSelf: 'flex-end', backgroundColor: Palette.surfaceLift, borderBottomRightRadius: 6 },
   hers: { alignSelf: 'flex-start', backgroundColor: ROSE_SOFT, borderBottomLeftRadius: 6 },
   typing: { paddingVertical: Space.md },
+  withPhoto: { width: '78%', paddingHorizontal: Space.xs, paddingTop: Space.xs, gap: Space.sm },
+  photo: { borderRadius: 14, overflow: 'hidden' },
+  faceBadge: {
+    position: 'absolute',
+    left: Space.sm,
+    top: Space.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Space.sm,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(9, 8, 14, 0.7)',
+  },
+  faceBadgeText: { color: Palette.text },
+  snapping: { width: '78%', gap: Space.sm, paddingVertical: Space.md },
+  snapRow: { flexDirection: 'row', alignItems: 'center', gap: Space.xs + 2 },
+  snapText: { color: Palette.muted, ...Type.small },
+  track: { height: 4, borderRadius: 2, backgroundColor: Palette.hairline, overflow: 'hidden' },
+  fillBar: { height: '100%', borderRadius: 2, backgroundColor: ROSE },
   mineText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
   hersText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
   error: { color: Palette.alert, textAlign: 'center', marginTop: Space.sm },

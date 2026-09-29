@@ -13,14 +13,37 @@ import * as secure from '@/lib/secure';
  * answers 404 to anyone but the owner, and the menu row only appears once it answered 200.
  */
 
-export type CompanionMessage = { role: 'you' | 'her'; text: string; at: string };
+/** A photo she sent (maestro companion/photos.py), drawn on the Mac from her base face. */
+export type CompanionPhoto = { name: string; model: string; scene: string };
 
-export type Companion = { name: string; age: number; model: string; messages: CompanionMessage[] };
+export type CompanionMessage = { role: 'you' | 'her'; text: string; at: string; image?: CompanionPhoto };
+
+export type Companion = {
+  name: string;
+  age: number;
+  model: string;
+  /** The picture every photo of her is drawn from, or null before her first photo. */
+  face: string | null;
+  messages: CompanionMessage[];
+};
+
+/** Her photos are portrait, like a phone's (photos.SIZE, 768 × 960). */
+export const PHOTO_ASPECT = 768 / 960;
 
 export async function fetchCompanion(lane: Lane): Promise<Companion> {
   const res = await authedFetch(lane, '/companion');
   if (!res.ok) throw new Error(res.status === 404 ? 'Not here.' : `The Mac refused (${res.status}).`);
   return (await res.json()) as Companion;
+}
+
+/** Make one of her photos the base face all later photos are drawn from. */
+export async function setFace(lane: Lane, name: string): Promise<void> {
+  const res = await authedFetch(lane, '/companion/face', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
 export async function forgetCompanion(lane: Lane): Promise<void> {
@@ -49,7 +72,18 @@ export type CompanionEvent =
   /** Her words so far, as the model writes them. */
   | { kind: 'token'; text: string }
   /** The reply as saved. Can differ from the tokens: maestro replaces a reply that breaks its age rule. */
-  | { kind: 'reply'; text: string };
+  | { kind: 'reply'; text: string }
+  /** After her words: a photo is being taken, its mflux steps, the photo, or why not. */
+  | { kind: 'photoStarted' }
+  | { kind: 'progress'; done: number; total: number }
+  | { kind: 'photo'; photo: CompanionPhoto }
+  | { kind: 'photoFailed'; message: string };
+
+/**
+ * Her words as they stream, without the `[photo: …]` tag she ends a message with — the
+ * tag is for maestro, and half of one ("[pho") shows up before it can be matched whole.
+ */
+export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|photo|s|se|sel|self|selfi|selfie|pic|image)(?::[^\]]*)?\]?\s*$/i, '').replace(/\s*\[(?:photo|selfie|pic|image)\s*:[^\]]*\]\s*/gi, ' ').trimEnd();
 
 /**
  * Send one message and stream her reply. The same bearer-token dance as streamChat: one
@@ -91,7 +125,7 @@ export async function streamCompanion(opts: {
     if (done) break;
     for (const frame of parse(decoder.decode(value, { stream: true }))) {
       if (frame.event === 'done') return;
-      let data: { message?: string; text?: string };
+      let data: { message?: string; text?: string; done?: number; total?: number; name?: string; model?: string; scene?: string };
       try {
         data = JSON.parse(frame.data);
       } catch {
@@ -100,6 +134,12 @@ export async function streamCompanion(opts: {
       if (frame.event === 'status') onEvent({ kind: 'typing' });
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
       else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message });
+      else if (frame.event === 'photo_status') onEvent({ kind: 'photoStarted' });
+      else if (frame.event === 'progress' && typeof data.done === 'number' && typeof data.total === 'number')
+        onEvent({ kind: 'progress', done: data.done, total: data.total });
+      else if (frame.event === 'image' && data.name)
+        onEvent({ kind: 'photo', photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '' } });
+      else if (frame.event === 'photo_error') onEvent({ kind: 'photoFailed', message: data.message ?? 'The photo failed.' });
       else if (frame.event === 'error') throw new Error(data.message ?? 'Something went wrong on the Mac.');
     }
   }
