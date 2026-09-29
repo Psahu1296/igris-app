@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { Camera, ImagePlus, Loader2, Mic, Send, Square, X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -76,8 +76,16 @@ export function Composer({
     opacity: listening ? 0.35 : 0,
   }));
 
+  // One Enter on Android's multiline input fired onSubmitEditing twice (2026-09-29, a
+  // OnePlus 11R over adb): both calls ran before the re-render that clears the draft,
+  // so both saw `ready` and the turn was sent twice. A ref sees the first call at once.
+  const lastSend = useRef(0);
+
   const send = () => {
     if (!ready) return;
+    const now = Date.now();
+    if (now - lastSend.current < 800) return;
+    lastSend.current = now;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSend(draft.trim(), photo ?? undefined);
     setDraft('');

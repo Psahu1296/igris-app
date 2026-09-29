@@ -15,8 +15,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * it is deprecated and documented to seize inset management for the whole app,
  * which would fight react-native-safe-area-context.
  *
- * When the keyboard is up it already covers the navigation bar, so the safe-area
- * inset must not be added on top — hence max(), not sum.
+ * The height React Native reports is the keyboard's inset MINUS the navigation bar
+ * (ReactRootView.java: `imeInsets.bottom - barInsets.bottom`). Edge-to-edge, the app
+ * draws down to the screen's edge, so the keyboard covers that bar's height too and it
+ * must be added back. This used max() until 2026-09-29, which left the composer one
+ * nav-bar short: the keyboard's suggestion and emoji strip sat over the input.
  */
 export function useKeyboardInset(): number {
   const insets = useSafeAreaInsets();
@@ -33,5 +36,5 @@ export function useKeyboardInset(): number {
     };
   }, []);
 
-  return Math.max(insets.bottom, keyboard);
+  return insets.bottom + keyboard;
 }

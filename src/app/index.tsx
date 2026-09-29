@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Check, Copy, Menu, Volume2, VolumeX } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -19,6 +19,7 @@ import { Title } from '@/components/typography';
 import { Gutter, laneColor, Palette, Space, Font } from '@/constants/theme';
 import { useConversation } from '@/lib/conversation/use-conversation';
 import { formatTranscript } from '@/lib/transcript';
+import { useBackGuard } from '@/lib/use-back-guard';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useAutoSpeak } from '@/lib/voice/auto-speak';
 import { useListening } from '@/lib/voice/use-listening';
@@ -47,7 +48,18 @@ export default function Transcript() {
   const [copiedChat, setCopiedChat] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const scroller = useRef<ScrollView>(null);
+  const viewport = useRef(0);
   const bottomInset = useKeyboardInset();
+  // A chat opened from the Chats list goes back there, as a messaging app would.
+  const [fromList, setFromList] = useState(false);
+  useBackGuard(
+    useCallback(() => {
+      if (!fromList) return false;
+      setFromList(false);
+      setBrowsing(true);
+      return true;
+    }, [fromList])
+  );
   const listening = useListening(lane, laneReachable);
   const speech = useSpeech();
   const [autoSpeak, setAutoSpeak] = useAutoSpeak();
@@ -143,7 +155,16 @@ export default function Transcript() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
-          keyboardDismissMode="on-drag">
+          // The keyboard shrinks the viewport without changing the content, so
+          // onContentSizeChange never fired and the latest message sat under it.
+          onLayout={(e) => {
+            const height = e.nativeEvent.layout.height;
+            if (height < viewport.current) scroller.current?.scrollToEnd({ animated: true });
+            viewport.current = height;
+          }}
+          // Not "on-drag": that closed the keyboard on the first drag, so the
+          // transcript could not be scrolled while typing. A tap outside or back closes it.
+          keyboardDismissMode="none">
           {turns.length === 0 && history !== 'ready' ? (
             <Opening tint={lanePref} error={history === 'loading' ? null : history.error} />
           ) : turns.length === 0 ? (
@@ -190,10 +211,12 @@ export default function Transcript() {
         currentId={sessionId}
         onOpen={(id) => {
           setBrowsing(false);
+          setFromList(true);
           void openSession(id);
         }}
         onNew={() => {
           setBrowsing(false);
+          setFromList(false);
           void startSession();
         }}
         onClose={() => setBrowsing(false)}
@@ -208,7 +231,10 @@ export default function Transcript() {
         onOpenFavourites={() => router.push('/favourites')}
         onOpenHelplines={() => router.push('/helplines')}
         onOpenUpdates={() => router.push('/updates')}
-        onNewConversation={() => void startSession()}
+        onNewConversation={() => {
+          setFromList(false);
+          void startSession();
+        }}
         onSignOut={() => void signOut()}
         lane={lane}
         lanePref={lanePref}
