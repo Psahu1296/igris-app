@@ -11,7 +11,6 @@ import {
 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -23,6 +22,7 @@ import {
 import Animated, { FadeInRight, FadeOutLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { IgrisLoader } from '@/components/igris-loader';
 import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme';
@@ -155,7 +155,9 @@ export function Sessions({
           {/* Thread List Section */}
           {threads === null ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator color={accent} size="large" />
+              {/* The sigil, like "Opening conversation…": a stock spinner here was the one
+                  loader in the app that was not Igris's own (2026-09-29). */}
+              <IgrisLoader tint={lanePref} state="loading" size={56} />
               <Meta style={styles.loadingText}>Fetching conversations from maestro…</Meta>
             </View>
           ) : (

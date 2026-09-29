@@ -40,18 +40,16 @@ export const Palette = {
 
   // Auto is a MODE, not a brain: the probe is choosing. Emerald because it is the
   // one hue left that none of the others claim — not tungsten (Mac), not steel
-  // (Render), not violet (thinking), not red (alert) — and it reads as "live",
+  // (Render), not pink (tools), not red (alert) — and it reads as "live",
   // where a neutral silver would read as disabled on the send button and the orb.
   auto: '#34D399',
   autoGlow: 'rgba(52, 211, 153, 0.25)',
   autoSoft: 'rgba(52, 211, 153, 0.12)',
 
-  thinking: '#A855F7',
-  thinkingGlow: 'rgba(168, 85, 247, 0.3)',
-
   // An agent is running tools (maestro's `agent_started`). Pink because every other
-  // hue is spoken for: tungsten, steel, emerald are modes; violet is thinking; red
-  // is alert. An orange would have sat too close to tungsten and read as "the Mac".
+  // hue is spoken for: tungsten, steel, emerald are modes; red is alert. An orange
+  // would have sat too close to tungsten and read as "the Mac". (Thinking was violet
+  // until 2026-09-29; it now takes the lane's colour, like answering.)
   working: '#EC4899',
   workingGlow: 'rgba(236, 72, 153, 0.3)',
 
@@ -93,13 +91,12 @@ export const laneSoft = (tint: Tint) =>
  * therefore begins once the mark appears inside the app, not on the splash.
  */
 /**
- * The loader's colour for each step of a turn. Thinking and working have their own
- * metals; answering deliberately has none — it takes the metal of the brain that
- * answered (see IgrisLoader), so the avatar settles into the same colour it was
- * speaking in instead of jumping at the end.
+ * The loader's colour for a step of a turn that is not the lane's own. Only working
+ * (tools running) has one. Thinking, answering and loading take the lane's metal (see
+ * IgrisLoader), so the mark matches every other accent on screen: thinking was a flat
+ * violet until 2026-09-29, the one colour on the screen that ignored the theme.
  */
 export const phaseMetal = {
-  thinking: { hi: '#E4CCFF', mid: Palette.thinking, lo: '#5B1FA6', core: '#F6EDFF' },
   working: { hi: '#FBCFE8', mid: Palette.working, lo: '#9D174D', core: '#FFF0F7' },
 } as const;
 

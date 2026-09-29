@@ -20,9 +20,12 @@ import { LOGO } from '@/lib/logo';
  * ONE motion — a pen stroke circling the crown's outline over a dimmed body, with a
  * pulsing core — and the COLOUR says which step the turn is on:
  *
- *   thinking   violet  `status` / `classifying`
+ *   thinking   the lane's metal (`tint`)  `status` / `classifying` (violet until 2026-09-29)
  *   working    pink    `agent_started` — an agent is running tools
  *   answering  the metal of the brain that answered (`tint`), while it is spoken
+ *   loading    the lane's metal (`tint`): fetching something that is not a turn, like
+ *              a conversation being opened. It was "thinking" until 2026-09-29, which
+ *              painted the one violet mark on screen while every other accent was the lane.
  *   idle       the icon, lit and still
  *
  * One motion rather than one per step, because the step that had its own motion
@@ -38,7 +41,7 @@ import { LOGO } from '@/lib/logo';
  * So it is driven by speech playback, where it genuinely lasts.
  */
 
-export type LoaderState = 'idle' | 'thinking' | 'working' | 'answering';
+export type LoaderState = 'idle' | 'thinking' | 'working' | 'answering' | 'loading';
 
 const L = LOGO.crown.length;
 
@@ -74,10 +77,10 @@ export function IgrisLoader({
   const reduceMotion = useReducedMotion();
   const active = state !== 'idle';
   const metal =
-    state === 'thinking' || state === 'working' ? phaseMetal[state] : laneMetal(tint);
+    state === 'working' ? phaseMetal.working : laneMetal(tint);
   // Ids are shared by every loader in the same colour, which is harmless: the
   // definitions are identical.
-  const gradient = `igrisLoaderMetal-${state === 'thinking' || state === 'working' ? state : tint}`;
+  const gradient = `igrisLoaderMetal-${state === 'working' ? state : tint}`;
 
   const fill = useSharedValue(1);
   const line = useSharedValue(0);
@@ -141,7 +144,9 @@ export function IgrisLoader({
         ? 'Igris is working'
         : state === 'answering'
           ? 'Igris is answering'
-          : 'Igris';
+          : state === 'loading'
+            ? 'Loading'
+            : 'Igris';
 
   return (
     <Animated.View

@@ -28,7 +28,7 @@ export function Opening({ tint, error }: { tint: Tint; error: string | null }) {
         <Answer style={styles.openingError}>{`Couldn't open that conversation. ${error}`}</Answer>
       ) : (
         <>
-          <IgrisLoader tint={tint} state="thinking" size={56} />
+          <IgrisLoader tint={tint} state="loading" size={56} />
           <Meta style={styles.openingText}>Opening conversation…</Meta>
         </>
       )}

@@ -23,8 +23,10 @@ export function AiCore({
   mode?: AiCoreMode;
   size?: number;
 }) {
-  const primaryColor = mode === 'thinking' ? Palette.thinking : laneColor(tint);
-  const glowColor = mode === 'thinking' ? Palette.thinkingGlow : laneGlow(tint);
+  // Thinking shows in the pace (faster pulse and spin below), not a colour of its own:
+  // the lane's colour, like every other accent (violet until 2026-09-29).
+  const primaryColor = laneColor(tint);
+  const glowColor = laneGlow(tint);
 
   // Shared values for animations
   const pulse = useSharedValue(0);
