@@ -11,7 +11,7 @@ import { authedFetch } from '@/lib/maestro';
  * Mac's .env models whatever is picked here (maestro sets that per request).
  */
 
-export type ModelRole = 'chat' | 'vision';
+export type ModelRole = 'chat' | 'vision' | 'companion';
 
 export type LocalModel = {
   name: string;
@@ -43,7 +43,7 @@ export type ModelsView = {
   models: LocalModel[];
 };
 
-export const ROLE_ORDER: ModelRole[] = ['chat', 'vision'];
+export const ROLE_ORDER: ModelRole[] = ['chat', 'vision', 'companion'];
 
 export const fits = (model: LocalModel, role: RoleView) => model.caps.includes(role.needs);
 

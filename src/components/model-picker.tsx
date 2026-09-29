@@ -31,7 +31,8 @@ export function ModelPicker({ lane, active }: { lane: Lane; active: boolean }) {
       {!view && !error ? <ActivityIndicator size="small" color={Palette.faint} style={styles.loading} /> : null}
 
       {view
-        ? ROLE_ORDER.map((role) => (
+        ? // A maestro from before a role existed does not list it.
+          ROLE_ORDER.filter((role) => view.roles[role]).map((role) => (
             <RoleRow
               key={role}
               role={role}

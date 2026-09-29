@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import {
   ChevronRight,
   Cloud,
+  Heart,
   LifeBuoy,
   RefreshCw,
   ListTodo,
@@ -38,6 +39,9 @@ interface SideDrawerProps {
   onOpenFavourites: () => void;
   onOpenHelplines: () => void;
   onOpenUpdates: () => void;
+  /** Her name once the Mac said this login may see her (lib/companion.ts); null hides the row. */
+  companionName: string | null;
+  onOpenCompanion: () => void;
   onNewConversation: () => void;
   onSignOut: () => void;
   lane: Lane;
@@ -55,6 +59,8 @@ export function SideDrawer({
   onOpenFavourites,
   onOpenHelplines,
   onOpenUpdates,
+  companionName,
+  onOpenCompanion,
   onNewConversation,
   onSignOut,
   lane,
@@ -211,6 +217,22 @@ export function SideDrawer({
                   </View>
                   <ChevronRight size={16} color={Palette.faint} />
                 </PressableScale>
+
+                {companionName ? (
+                  <PressableScale
+                    onPress={() => handleAction(onOpenCompanion)}
+                    accessibilityRole="button"
+                    style={styles.navRow}>
+                    <View style={[styles.navIconBox, { backgroundColor: 'rgba(251, 113, 133, 0.14)' }]}>
+                      <Heart size={18} color="#FB7185" />
+                    </View>
+                    <View style={styles.navTextGroup}>
+                      <Answer style={styles.navLabel}>{companionName}</Answer>
+                      <Meta style={styles.navHint}>Private · on the Mac only</Meta>
+                    </View>
+                    <ChevronRight size={16} color={Palette.faint} />
+                  </PressableScale>
+                ) : null}
 
                 {/* Helplines & SOS — red, because it is the one row that is never casual */}
                 <PressableScale

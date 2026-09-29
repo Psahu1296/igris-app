@@ -17,6 +17,7 @@ import { SideDrawer } from '@/components/side-drawer';
 import { Turn } from '@/components/turn';
 import { Title } from '@/components/typography';
 import { Gutter, laneColor, Palette, Space, Font } from '@/constants/theme';
+import { useCompanionName } from '@/lib/companion';
 import { useConversation } from '@/lib/conversation/use-conversation';
 import { formatTranscript } from '@/lib/transcript';
 import { useBackGuard } from '@/lib/use-back-guard';
@@ -45,6 +46,7 @@ export default function Transcript() {
   const { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall, nextStep } = useConversation();
   const [laneMenuOpen, setLaneMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const companionName = useCompanionName(lane, drawerOpen);
   const [copiedChat, setCopiedChat] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const scroller = useRef<ScrollView>(null);
@@ -231,6 +233,8 @@ export default function Transcript() {
         onOpenFavourites={() => router.push('/favourites')}
         onOpenHelplines={() => router.push('/helplines')}
         onOpenUpdates={() => router.push('/updates')}
+        companionName={companionName}
+        onOpenCompanion={() => router.push('/companion')}
         onNewConversation={() => {
           setFromList(false);
           void startSession();

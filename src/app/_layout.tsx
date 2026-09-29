@@ -96,6 +96,7 @@ function RootNavigator() {
         <Stack.Screen name="updates" />
         <Stack.Screen name="todos" />
         <Stack.Screen name="todo" />
+        <Stack.Screen name="companion" />
       </Stack.Protected>
 
       <Stack.Protected guard={status !== 'signed-in'}>
