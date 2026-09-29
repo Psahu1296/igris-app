@@ -394,6 +394,8 @@ export function useConversation() {
                 }) || phoneSpeaks;
             } else if (event.kind === 'drawn') {
               patch({ drawn: event.picture });
+            } else if (event.kind === 'progress') {
+              patch({ progress: event.progress });
             } else if (event.kind === 'scout') {
               patch({ scout: event.job.id });
               setWatching((prev) => ({ ...prev, [event.job.id]: sessionId }));

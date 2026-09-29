@@ -42,6 +42,7 @@ export function DrawnPicture({ lane, picture }: { lane: Lane; picture: Drawn }) 
         onError={() => setFailed(true)}
       />
       <SaveButton lane={lane} name={picture.name} />
+      {picture.model ? <Meta style={styles.model}>Drawn with {picture.model}</Meta> : null}
     </View>
   );
 }
@@ -82,6 +83,8 @@ function SaveButton({ lane, name }: { lane: Lane; name: string }) {
 
 const styles = StyleSheet.create({
   drawnFailed: { color: Palette.muted },
+  // Which model drew it: HD pictures come from a different one (maestro imagine.HD).
+  model: { color: Palette.faint, marginTop: Space.xs },
   drawn: {
     width: '100%',
     aspectRatio: 1,

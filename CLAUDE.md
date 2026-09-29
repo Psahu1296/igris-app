@@ -51,9 +51,19 @@ Consequences, in order of how much they will bite:
   in SecureStore (`igris.lane`), and is honoured *even when the pinned lane is down* —
   the probe still runs, but only so the chip can turn red and say so. `session.tsx`
   owns this as `lanePref` + `laneReachable`; `lane` is still what requests use.
+- **The Mac's model is picked in the same menu** (added 2026-09-29). On the local lane,
+  when it answers, `components/model-picker.tsx` lists the Mac's Ollama models per role
+  (Chat, Photos) from maestro `GET /models` and sets one with `PUT /models/{role}`
+  (`lib/models.ts`, `useLocalModels`); "Default" puts the role back on the Mac's .env.
+  The choice lives on the Mac (it survives app reinstalls and applies to the voice loop
+  too), not on the phone. A picked chat model also replaces the cloud persona voice.
+  Owner only: a demo login sees maestro's 403 sentence, and is answered by the .env
+  models whatever the owner picked. Refusal-stripped models are labelled "uncensored".
 - **`IgrisLoader`: one motion, the colour is the step** (added 2026-09-24). A pen
-  stroke circles the outline over a dimmed body; violet = thinking, pink = working
-  (tools), the answering brain's metal = answering, lit and still = idle. A per-step
+  stroke circles the outline over a dimmed body; pink = working (tools); thinking,
+  answering and `loading` (opening a conversation) take the lane's metal; lit and
+  still = idle. Thinking was violet until 2026-09-29 — the one mark on screen that
+  ignored the theme — so pink is now the only step with a colour of its own. A per-step
   motion was tried first — running segments for "working" — and on the phone it read
   as a bug crawling over the logo. Don't reintroduce motion per step. Phases come from maestro's stream (`lib/maestro.ts::phaseOf`: `agent_started` →
   working, everything else → thinking) — the event name used to be thrown away.
@@ -132,9 +142,13 @@ Consequences, in order of how much they will bite:
   intent query through Gradle's manifest merge. Photos are not restored from history
   (the history keeps "[Photo] <question>").
 - **Igris draws pictures on the Mac** (added 2026-09-25): "draw a tiger" gets an `image`
-  SSE frame (`{name, prompt}`); `DrawnPicture` (`components/cards/drawn-picture.tsx`) loads `GET /images/{name}`
-  through expo-image with the bearer token (`drawnSource`). History rows end with an
-  `[image:<name>]` marker that `splitDrawn` removes and turns back into the picture. The
+  SSE frame (`{name, prompt, model}`); `DrawnPicture` (`components/cards/drawn-picture.tsx`) loads `GET /images/{name}`
+  through expo-image with the bearer token (`drawnSource`) and says "Drawn with <model>"
+  under it (2026-09-29: "in HD" draws on Z-Image-Turbo, otherwise FLUX.2 klein). History
+  rows end with an `[image:<name>|<model>]` marker (`[image:<name>]` before then; both
+  parse) that `splitDrawn` removes and turns back into the picture. While it draws,
+  `progress` frames ({done, total}: mflux's real steps, 9 for HD) fill a bar under the
+  status with a painter's line per stretch (`lib/drawing-steps.ts`, 2026-09-29). The
   files live on the Mac, so on Render a reopened conversation says it cannot load them.
   The download button on a picture (`SaveButton` → `lib/gallery.ts`) fetches it to the
   cache with the token (expo-file-system) and saves it into an "Igris" album with
@@ -335,6 +349,14 @@ released with no underruns. Download to speech took under 20s on 5G.
   height instead, which *does* fire under edge-to-edge. Reanimated's
   `useAnimatedKeyboard` is the other no-dependency option but is deprecated and seizes
   inset management app-wide, which fights safe-area-context.
+  That height is the IME inset **minus the nav bar** (`ReactRootView.java`), so the hook
+  adds `insets.bottom` back; it used max() until 2026-09-29 and the keyboard's
+  suggestion strip covered the composer. The transcript scrolls to the end when its
+  viewport shrinks (`onLayout`), since the keyboard changes no content size.
+- **Back on the transcript doesn't exit on the first press** (`lib/use-back-guard.ts`,
+  2026-09-29): a chat opened from Chats goes back to Chats; otherwise "press back again
+  to close". A cold start begins a new thread, so a stray back used to lose the chat.
+  Registered with `useFocusEffect` because BackHandler listeners are global.
 - **Phone actions go through our own native module, `modules/igris-device`** (Kotlin,
   autolinked at Gradle time — no prebuild needed). maestro plans the action
   (`maestro/agents/device.py`), `lib/maestro.ts` passes the `device_action` frame

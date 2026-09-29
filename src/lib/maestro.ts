@@ -151,6 +151,8 @@ export type TurnEvent =
   | { kind: 'bill'; card: BillCard }
   /** A picture Igris drew (maestro imagine.py). Arrives just before the answer. */
   | { kind: 'drawn'; picture: Drawn }
+  /** A picture being drawn: mflux's denoising steps so far (maestro imagine.progress_of). */
+  | { kind: 'progress'; progress: DrawProgress }
   /** A background Scout job started (maestro scout/); its report comes later (lib/scout.ts). */
   | { kind: 'scout'; job: ScoutStarted };
 
@@ -173,17 +175,27 @@ export type BillCard = {
   type: string;
 };
 
-/** A picture Igris drew: its file on the Mac's maestro (GET /images/{name}). */
-export type Drawn = { name: string; prompt: string };
+/**
+ * A picture Igris drew: its file on the Mac's maestro (GET /images/{name}), and the
+ * model that drew it ("Z-Image-Turbo" for HD, "FLUX.2 klein 4B" otherwise), shown under
+ * the picture. Empty for pictures from before 2026-09-29, which did not record it.
+ */
+export type Drawn = { name: string; prompt: string; model?: string };
 
-/** Where the history keeps which picture a turn drew (maestro main.py appends it). */
-const DRAWN_MARKER = /\n*\[image:([0-9a-f]{32}\.jpg)\]\s*$/;
+/** How far a picture being drawn is, in mflux's own steps (9 for HD, 4 for klein). */
+export type DrawProgress = { done: number; total: number };
+
+/**
+ * Where the history keeps which picture a turn drew (maestro imagine.marker):
+ * `[image:<name>|<model>]`, or `[image:<name>]` in older threads.
+ */
+const DRAWN_MARKER = /\n*\[image:([0-9a-f]{32}\.jpg)(?:\|([^\]\n]{1,40}))?\]\s*$/;
 
 /** Split a saved answer into its words and the picture it drew, if any. */
 export function splitDrawn(answer: string): { text: string; drawn: Drawn | null } {
   const match = DRAWN_MARKER.exec(answer);
   if (!match) return { text: answer, drawn: null };
-  return { text: answer.slice(0, match.index), drawn: { name: match[1], prompt: '' } };
+  return { text: answer.slice(0, match.index), drawn: { name: match[1], prompt: '', model: match[2] } };
 }
 
 /**
@@ -297,6 +309,18 @@ export async function streamChat(opts: {
           if (Array.isArray(card.items)) onEvent({ kind: 'bill', card });
         } catch {
           // malformed: the bill is still in the spoken answer
+        }
+        continue;
+      }
+
+      if (frame.event === 'progress') {
+        try {
+          const progress = JSON.parse(frame.data) as DrawProgress;
+          if (typeof progress.done === 'number' && typeof progress.total === 'number') {
+            onEvent({ kind: 'progress', progress });
+          }
+        } catch {
+          // malformed: the status line still says it is drawing
         }
         continue;
       }

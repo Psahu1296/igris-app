@@ -1,5 +1,5 @@
 import type { DeviceStep } from '@/lib/device';
-import type { BillCard, Drawn, Lane, Phase, QuizCard } from '@/lib/maestro';
+import type { BillCard, DrawProgress, Drawn, Lane, Phase, QuizCard } from '@/lib/maestro';
 
 /** One ask and everything Igris did about it — what a Turn card draws. */
 export type TurnState = {
@@ -23,6 +23,8 @@ export type TurnState = {
   bill?: BillCard | null;
   /** A picture Igris drew in this turn. */
   drawn?: Drawn | null;
+  /** How far the picture being drawn is; shown under the status until the answer. */
+  progress?: DrawProgress | null;
   /** The ask was an emergency: the SOS card, answered on the phone (lib/emergency.ts). */
   sos?: boolean;
   /**

@@ -19,6 +19,7 @@ import { Answer, Aside, Meta } from '@/components/typography';
 import { Font, Gutter, laneColor, laneSoft, Palette, Space, Type } from '@/constants/theme';
 import type { TurnState } from '@/lib/conversation/turn-state';
 import type { Contact, Conversation } from '@/lib/device';
+import { drawingLine, drawingShare } from '@/lib/drawing-steps';
 import { revealed } from '@/lib/hint';
 import { useSpeakingId, useSpeech } from '@/lib/voice/use-speech';
 import { useSession } from '@/state/session';
@@ -182,6 +183,23 @@ export function Turn({
             <View style={styles.thinkingRow}>
               <IgrisLoader size={26} tint={turn.lane} state={turn.phase ?? 'thinking'} />
               <Aside style={styles.statusText}>{turn.status}</Aside>
+            </View>
+          ) : null}
+
+          {/* A picture in progress: mflux's real steps as a bar, and a line per stretch. */}
+          {!turn.answer && turn.progress ? (
+            <View style={styles.progressBox}>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${drawingShare(turn.progress) * 100}%`, backgroundColor: accent },
+                  ]}
+                />
+              </View>
+              <Meta style={styles.progressText}>
+                {drawingLine(turn.progress)}  ·  step {turn.progress.done} of {turn.progress.total}
+              </Meta>
             </View>
           ) : null}
 
@@ -367,7 +385,19 @@ const styles = StyleSheet.create({
   statusText: {
     color: Palette.muted,
     fontSize: 13,
+    // Without it a long status ("Drawing it in HD with Z-Image-Turbo on the Mac… about
+    // two minutes.") ran off the card instead of wrapping (seen 2026-09-29).
+    flexShrink: 1,
   },
+  progressBox: { gap: Space.xs, paddingTop: Space.xs },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    backgroundColor: Palette.hairline,
+  },
+  progressFill: { height: '100%', borderRadius: 2 },
+  progressText: { color: Palette.muted, ...Type.micro },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
