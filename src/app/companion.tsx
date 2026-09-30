@@ -1,24 +1,28 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Heart, Radio, Smile, Trash2, UserRound } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Heart, Mic, Radio, Smile, Square, Trash2, UserRound } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
+import { MemorySheet } from '@/components/companion/memory-sheet';
+import { CompanionTray } from '@/components/companion/tray';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
+  bubbles,
   CompanionRefused,
   emotes,
   fetchCompanion,
   forgetCompanion,
   lastCompanion,
+  likeMessage,
   liveMode,
-  MY_EMOTES,
+  moodLine,
   PHOTO_ASPECT,
   setFace,
   shown,
@@ -27,9 +31,12 @@ import {
   withoutTag,
   type CompanionMessage,
   type CompanionPhoto,
+  type CompanionScene,
 } from '@/lib/companion';
 import { drawingShare } from '@/lib/drawing-steps';
-import { drawnSource, type Lane } from '@/lib/maestro';
+import { drawnSource, type Lane, type Photo } from '@/lib/maestro';
+import { pickPhoto } from '@/lib/photo';
+import { useListening } from '@/lib/voice/use-listening';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useSession } from '@/state/session';
 
@@ -43,7 +50,14 @@ import { useSession } from '@/state/session';
  * whether or not the phone is listening. The stream is only the live view of it. When it
  * is lost (the screen went off, the app went to the background) the screen reads the turn
  * back from the Mac and polls until it is done, so the reply is there on coming back.
+ *
+ * Since 2026-09-30 she has a state of her own on the Mac (mood, where she is: the header
+ * shows it), a memory (the tray's Memory chip), and more ways to start a turn: a scene or
+ * a game, a photo of his, the mic. A heart on her message tells her what he liked.
  */
+/** What starts a turn besides the typed draft: the camera button, a scene card, a photo of his. */
+type Turn = { snap?: boolean; scene?: string; photo?: Photo };
+
 const POLL_MS = 2500;
 /** How long to keep asking a Mac that stopped answering before saying so (~4 minutes). */
 const POLL_TRIES = 40;
@@ -66,6 +80,13 @@ export default function CompanionScreen() {
   const [live, setLive] = useState<string | null>(view?.live ?? null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [face, setFaceName] = useState<string | null>(seen?.face ?? null);
+  // Her mood and where she is, for the header; null before she has said (or on an older maestro).
+  const [mood, setMood] = useState<string | null>(seen ? moodLine(seen) : null);
+  const [liked, setLiked] = useState<string[]>(seen?.liked ?? []);
+  const [scenes, setScenes] = useState<CompanionScene[]>(seen?.scenes ?? []);
+  const [remembering, setRemembering] = useState(false);
+  // The mic: what he says lands in the message box, to be read before it is sent.
+  const listening = useListening(lane, true);
   // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
   const [snapping, setSnapping] = useState<{ done: number; total: number } | null>(view?.snapping ?? null);
   const lastSend = useRef(0);
@@ -99,6 +120,9 @@ export default function CompanionScreen() {
         setName(c.name);
         setModel(c.model);
         setFaceName(c.face);
+        setMood(moodLine(c));
+        setLiked(c.liked ?? []);
+        setScenes(c.scenes ?? []);
         setMessages(view.messages);
         setLive(view.live);
         setSnapping(view.snapping);
@@ -152,21 +176,23 @@ export default function CompanionScreen() {
   }, [lane]);
 
   /**
-   * One turn. `snap`: the camera button, a photo of the moment with no message from him
-   * (the draft is left alone); otherwise the draft is sent.
+   * One turn. `snap`: the camera button, a photo of the moment with no message from him;
+   * `scene`: a scene card or a game, which she opens (the draft is left alone for both).
+   * Otherwise the draft is sent, with `photo` when he picked one (the draft may be empty then).
    */
-  const send = useCallback(async (snap = false) => {
-    const text = snap ? undefined : draft.trim();
+  const send = useCallback(async (turn: Turn = {}) => {
+    const text = turn.snap || turn.scene !== undefined ? undefined : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
-    if (text === '' || live !== null || snapping || now - lastSend.current < 800) return;
+    if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
     lastSend.current = now;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSendError(null);
     const at = new Date().toISOString();
     if (text !== undefined) {
       setDraft('');
-      setMessages((m) => [...m, { role: 'you', text, at }]);
+      const image = turn.photo ? { name: '', model: '', scene: '', his: true, uri: turn.photo.uri } : undefined;
+      setMessages((m) => [...m, { role: 'you', text, at, image }]);
     }
     setLive('');
     let words = '';
@@ -186,12 +212,17 @@ export default function CompanionScreen() {
       await streamCompanion({
         lane,
         message: text,
+        image: turn.photo?.base64,
+        scene: turn.scene,
         live: liveOn,
         signal: controller.signal,
         onEvent: (event) => {
           if (event.kind === 'token') {
             words += event.text;
             setLive(words);
+          } else if (event.kind === 'retake') {
+            words = '';
+            setLive('');
           } else if (event.kind === 'reply') {
             if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt }]);
             setLive(null);
@@ -226,11 +257,39 @@ export default function CompanionScreen() {
       } else {
         setLive(null);
         setSnapping(null);
-        // Keep the snapshot the next visit opens on current; this screen already shows the turn.
-        void fetchCompanion(lane).catch(() => {});
+        // Read the turn back as the Mac saved it: her mood, and the ids a heart needs.
+        if (mounted.current) void sync();
       }
     }
   }, [draft, live, snapping, lane, sync, liveOn]);
+
+  const sendPhoto = async (source: 'camera' | 'library') => {
+    try {
+      const photo = await pickPhoto(source);
+      if (photo) void send({ photo });
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** A heart on her message, shown at once and taken back if the Mac refuses. */
+  const toggleLike = (at: string) => {
+    const on = !liked.includes(at);
+    const before = liked;
+    setLiked(on ? [...liked, at] : liked.filter((a) => a !== at));
+    void Haptics.selectionAsync();
+    likeMessage(lane, at, on)
+      .then(setLiked)
+      .catch((e: unknown) => {
+        setLiked(before);
+        ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT);
+      });
+  };
+
+  const talk = () => {
+    if (listening.state !== 'idle') void listening.stop();
+    else void listening.start((heard) => setDraft((d) => (d ? `${d} ${heard}` : heard)));
+  };
 
   const toggleLive = () => {
     const on = !liveOn;
@@ -289,7 +348,7 @@ export default function CompanionScreen() {
           <View style={styles.headerText}>
             <Title style={styles.name}>{name ?? ' '}</Title>
             <Meta numberOfLines={1}>
-              {snapping ? 'sending a photo…' : busy ? 'typing…' : model ? `on ${model}` : ' '}
+              {snapping ? 'sending a photo…' : busy ? 'typing…' : (mood ?? (model ? `on ${model}` : ' '))}
             </Meta>
           </View>
           {name !== null && lane === 'local' ? (
@@ -335,17 +394,23 @@ export default function CompanionScreen() {
             {messages.length === 0 && !busy ? (
               <Meta style={styles.hello}>Say hi to {name}. Only you can see this chat; it stays on the Mac.</Meta>
             ) : null}
-            {messages.map((m, i) => (
-              <Bubble
-                key={`${m.at}-${i}`}
-                lane={lane}
-                mine={m.role === 'you'}
-                text={m.text}
-                image={m.image}
-                isFace={!!m.image && m.image.name === face}
-                onMakeFace={makeFace}
-              />
-            ))}
+            {messages.flatMap((m, i) => {
+              // Her separate thoughts are separate texts; a photo keeps its words under it.
+              const parts = m.role === 'her' && !m.image ? bubbles(m.text) : [m.text];
+              return parts.map((part, j) => (
+                <Bubble
+                  key={`${m.at}-${i}-${j}`}
+                  lane={lane}
+                  mine={m.role === 'you'}
+                  text={part}
+                  image={m.image}
+                  isFace={!!m.image && m.image.name === face}
+                  onMakeFace={makeFace}
+                  liked={liked.includes(m.at)}
+                  onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
+                />
+              ));
+            })}
             {snapping ? (
               <View style={[styles.bubble, styles.hers, styles.snapping]}>
                 <View style={styles.snapRow}>
@@ -360,7 +425,7 @@ export default function CompanionScreen() {
               </View>
             ) : live !== null ? (
               withoutTag(live) ? (
-                <Bubble lane={lane} mine={false} text={withoutTag(live)} />
+                bubbles(withoutTag(live)).map((part, j) => <Bubble key={j} lane={lane} mine={false} text={part} />)
               ) : (
                 <View style={[styles.bubble, styles.hers, styles.typing]}>
                   <TypingIndicator color={ROSE} />
@@ -372,27 +437,22 @@ export default function CompanionScreen() {
         )}
 
         {emoting ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
-            style={styles.emotes}
-            contentContainerStyle={styles.emotesRow}>
-            {MY_EMOTES.map((emote) => (
-              <PressableScale
-                key={emote}
-                onPress={() => setDraft((d) => withEmote(d, emote))}
-                accessibilityRole="button"
-                accessibilityLabel={`Add: ${emote}`}
-                style={styles.emoteChip}>
-                <Text style={styles.emoteChipText}>{emote}</Text>
-              </PressableScale>
-            ))}
-          </ScrollView>
+          <CompanionTray
+            scenes={scenes}
+            busy={busy}
+            accent={ROSE}
+            onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
+            onScene={(scene) => void send({ scene: scene.id })}
+            onPhoto={(source) => void sendPhoto(source)}
+            onMemory={() => setRemembering(true)}
+          />
+        ) : null}
+        {remembering && name ? (
+          <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setRemembering(false)} />
         ) : null}
         <View style={styles.composer}>
           <PressableScale
-            onPress={() => void send(true)}
+            onPress={() => void send({ snap: true })}
             disabled={busy || name === null || lane !== 'local'}
             hitSlop={8}
             accessibilityRole="button"
@@ -406,7 +466,7 @@ export default function CompanionScreen() {
             hitSlop={8}
             accessibilityRole="button"
             accessibilityState={{ expanded: emoting }}
-            accessibilityLabel="Add what you do or feel"
+            accessibilityLabel="Actions, scenes, photos and her memory"
             style={[styles.snap, emoting ? styles.snapOn : null, { opacity: name === null ? 0.4 : 1 }]}>
             <Smile size={18} color={ROSE} />
           </PressableScale>
@@ -420,14 +480,26 @@ export default function CompanionScreen() {
             editable={lane === 'local' && name !== null}
             accessibilityLabel="Message"
           />
-          <PressableScale
-            onPress={() => void send()}
-            disabled={!draft.trim() || busy}
-            accessibilityRole="button"
-            accessibilityLabel="Send"
-            style={[styles.send, { opacity: draft.trim() && !busy ? 1 : 0.4 }]}>
-            <ArrowUp size={18} color={Palette.ground} />
-          </PressableScale>
+          {draft.trim() || !listening.available ? (
+            <PressableScale
+              onPress={() => void send()}
+              disabled={!draft.trim() || busy}
+              accessibilityRole="button"
+              accessibilityLabel="Send"
+              style={[styles.send, { opacity: draft.trim() && !busy ? 1 : 0.4 }]}>
+              <ArrowUp size={18} color={Palette.ground} />
+            </PressableScale>
+          ) : (
+            // Nothing typed: the same button listens, and what he says lands in the box.
+            <PressableScale
+              onPress={talk}
+              disabled={name === null || listening.state === 'transcribing'}
+              accessibilityRole="button"
+              accessibilityLabel={listening.state === 'listening' ? 'Stop listening' : 'Speak your message'}
+              style={[styles.send, { opacity: name === null || listening.state === 'transcribing' ? 0.4 : 1 }]}>
+              {listening.state === 'idle' ? <Mic size={18} color={Palette.ground} /> : <Square size={15} color={Palette.ground} />}
+            </PressableScale>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -441,6 +513,8 @@ function Bubble({
   image,
   isFace = false,
   onMakeFace,
+  liked = false,
+  onLike,
 }: {
   lane: Lane;
   mine: boolean;
@@ -448,10 +522,20 @@ function Bubble({
   image?: CompanionPhoto;
   isFace?: boolean;
   onMakeFace?: (photo: CompanionPhoto) => void;
+  liked?: boolean;
+  /** Her saved messages only: puts a heart on it, or takes it off. */
+  onLike?: () => void;
 }) {
-  return (
+  const bubble = (
     <View style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
-      {image ? (
+      {image?.uri ? (
+        // His own photo, still only on the phone while the turn runs.
+        <Image source={{ uri: image.uri }} style={styles.hisPhoto} contentFit="cover" />
+      ) : image?.his ? (
+        <View style={styles.photo}>
+          <DrawnPicture lane={lane} picture={{ name: image.name, prompt: 'A photo you sent' }} />
+        </View>
+      ) : image ? (
         <View style={styles.photo}>
           <DrawnPicture lane={lane} picture={{ name: image.name, prompt: image.scene }} aspect={PHOTO_ASPECT} />
           {isFace ? (
@@ -485,6 +569,23 @@ function Bubble({
           )}
         </Text>
       ) : null}
+    </View>
+  );
+  if (!onLike) return bubble;
+  // The heart sits beside the bubble, in a row of its own: a child drawn outside its
+  // parent's bounds gets no touches on Android.
+  return (
+    <View style={styles.likeRow}>
+      {bubble}
+      <PressableScale
+          onPress={onLike}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityState={{ selected: liked }}
+          accessibilityLabel={liked ? 'Take the heart off' : 'Love this message'}
+          style={styles.like}>
+        <Heart size={14} color={liked ? ROSE : Palette.faint} fill={liked ? ROSE : 'transparent'} />
+      </PressableScale>
     </View>
   );
 }
@@ -568,6 +669,10 @@ const styles = StyleSheet.create({
   typing: { paddingVertical: Space.md },
   withPhoto: { width: '78%', paddingHorizontal: Space.xs, paddingTop: Space.xs, gap: Space.sm },
   photo: { borderRadius: 14, overflow: 'hidden' },
+  hisPhoto: { width: '100%', aspectRatio: 1, borderRadius: 14 },
+  // The heart beside her bubble: faint until tapped.
+  likeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  like: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   faceBadge: {
     position: 'absolute',
     left: Space.sm,
@@ -617,18 +722,6 @@ const styles = StyleSheet.create({
     ...Type.ask,
   },
   snapOn: { borderColor: ROSE },
-  // His actions, one tap each; sits on the message box like a keyboard's suggestion row.
-  emotes: { flexGrow: 0, borderTopWidth: 1, borderTopColor: Palette.hairline },
-  emotesRow: { gap: Space.sm, paddingHorizontal: Gutter - 6, paddingVertical: Space.sm },
-  emoteChip: {
-    paddingHorizontal: 12,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Palette.hairline,
-  },
-  emoteChipText: { fontFamily: Font.voiceItalic, fontSize: 14, color: Palette.text },
   // The Live switch in the header: a quiet outline when off, filled when on.
   liveChip: {
     flexDirection: 'row',

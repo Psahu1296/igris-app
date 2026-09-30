@@ -14,9 +14,31 @@ import * as secure from '@/lib/secure';
  */
 
 /** A photo she sent (maestro companion/photos.py), drawn on the Mac from her base face. */
-export type CompanionPhoto = { name: string; model: string; scene: string };
+export type CompanionPhoto = {
+  name: string;
+  model: string;
+  scene: string;
+  /** A photo he sent her, not one of hers. */
+  his?: boolean;
+  /** His photo while it is still only on the phone (the turn is running). */
+  uri?: string;
+};
 
-export type CompanionMessage = { role: 'you' | 'her'; text: string; at: string; image?: CompanionPhoto };
+export type CompanionMessage = {
+  role: 'you' | 'her';
+  text: string;
+  /** When it was saved on the Mac; also its id (likeMessage). */
+  at: string;
+  image?: CompanionPhoto;
+  /** She wrote first, after a long silence (maestro companion/reach.py). */
+  reach?: boolean;
+};
+
+/** A scene or a game he can start with one tap (maestro companion/scenes.py). */
+export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' };
+
+/** One thing she has written down about the two of them (maestro companion/memory.py). */
+export type CompanionMemory = { at: string; kind: 'fact' | 'episode' | 'reflection'; text: string; weight: number };
 
 /**
  * A turn still running on the Mac (api/companion.py `_pending`). The Mac finishes a turn
@@ -48,6 +70,26 @@ export type Companion = {
   messages: CompanionMessage[];
   /** Missing on a maestro from before 2026-09-30. */
   pending?: CompanionPending | null;
+  /** How she is right now (maestro companion/inner.py). Missing on an older maestro, like the two below. */
+  state?: { stage: string; mood: string; where: string };
+  /** The `at` of each message of hers he put a heart on. */
+  liked?: string[];
+  scenes?: CompanionScene[];
+};
+
+/** The header's second line when she is idle: her mood and where she is, once she has said. */
+export const moodLine = (c: Pick<Companion, 'state'>): string | null => {
+  const parts = [c.state?.mood, c.state?.where].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+};
+
+/**
+ * One message of hers as the texts she sent: she puts separate thoughts on separate lines
+ * (her prompt asks her to), and each is its own bubble, the way a few quick texts arrive.
+ */
+export const bubbles = (text: string): string[] => {
+  const parts = text.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+  return parts.length ? parts : [text];
 };
 
 /**
@@ -63,7 +105,8 @@ export function shown(c: Companion): {
 } {
   const p = c.pending;
   if (!p) return { messages: c.messages, live: null, snapping: null };
-  const messages = p.saved ? [...c.messages] : [...c.messages, { role: 'you' as const, text: p.message, at: p.at }];
+  // A photo of his with no words has nothing to show until the Mac has saved it.
+  const messages = p.saved || !p.message ? [...c.messages] : [...c.messages, { role: 'you' as const, text: p.message, at: p.at }];
   if (!p.photo) return { messages, live: p.text, snapping: null };
   if (p.text) messages.push({ role: 'her', text: p.text, at: `${p.at}+her` });
   return { messages, live: null, snapping: p.photo };
@@ -140,6 +183,28 @@ export async function forgetCompanion(lane: Lane): Promise<void> {
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
+const post = (lane: Lane, path: string, body: unknown) =>
+  authedFetch(lane, path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+/** Put a heart on a message of hers, or take it off. She is shown the lines he loved. */
+export async function likeMessage(lane: Lane, at: string, on: boolean): Promise<string[]> {
+  const res = await post(lane, '/companion/like', { at, on });
+  if (!res.ok) throw new Error(res.status === 404 ? 'That message is not saved on the Mac yet.' : `The Mac refused (${res.status}).`);
+  return ((await res.json()) as { liked: string[] }).liked;
+}
+
+/** What she remembers, newest first. */
+export async function fetchMemory(lane: Lane): Promise<CompanionMemory[]> {
+  const res = await authedFetch(lane, '/companion/memory');
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her memory." : `The Mac refused (${res.status}).`);
+  return ((await res.json()) as { items: CompanionMemory[] }).items;
+}
+
+export async function forgetMemory(lane: Lane, item: CompanionMemory): Promise<void> {
+  const res = await post(lane, '/companion/memory/forget', { at: item.at, text: item.text });
+  if (!res.ok && res.status !== 404) throw new Error(`The Mac refused (${res.status}).`);
+}
+
 /** Her name while `active` on the Mac, or null: not the owner, Render, or an old maestro. */
 export function useCompanionName(lane: Lane, active: boolean): string | null {
   const [name, setName] = useState<string | null>(null);
@@ -162,6 +227,8 @@ export type CompanionEvent =
   | { kind: 'token'; text: string }
   /** The reply as saved. Can differ from the tokens: maestro replaces a reply that breaks its age rule. */
   | { kind: 'reply'; text: string }
+  /** She is writing the reply again (it repeated her own lines): the words so far are void. */
+  | { kind: 'retake' }
   /** After her words: a photo is being taken, its mflux steps, the photo, or why not. */
   | { kind: 'photoStarted' }
   | { kind: 'progress'; done: number; total: number }
@@ -175,10 +242,12 @@ export type CompanionEvent =
 export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|photo|s|se|sel|self|selfi|selfie|pic|image)(?::[^\]]*)?\]?\s*$/i, '').replace(/\s*\[(?:photo|selfie|pic|image)\s*:[^\]]*\]\s*/gi, ' ').trimEnd();
 
 /**
- * Send one message and stream her reply; or, with no `message`, the camera button: she
- * sends a photo of the moment the chat is in, with a line of her own, and nothing of his
- * is saved (maestro POST /companion/snap). The same bearer-token dance as streamChat: one
- * re-login on a 401, since signing in elsewhere evicts the phone's token.
+ * Send one message and stream her reply (with `image`, a photo of his she can see); or,
+ * with neither, the camera button: she sends a photo of the moment the chat is in, with a
+ * line of her own, and nothing of his is saved (maestro POST /companion/snap); or, with
+ * `scene`, a scene card or a game, which she opens (POST /companion/scene). The same
+ * bearer-token dance as streamChat: one re-login on a 401, since signing in elsewhere
+ * evicts the phone's token.
  *
  * Throws CompanionRefused when the Mac refused the turn. Any other error (the socket died
  * with the screen off, the stream ended early, a 409 because a turn is already running)
@@ -187,17 +256,22 @@ export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|
 export async function streamCompanion(opts: {
   lane: Lane;
   message?: string;
-  /** Live mode: she sends a photo with this reply. Ignored by the camera button. */
+  /** A photo of his, base64, sent with (or instead of) `message`. */
+  image?: string;
+  /** A scene card's id; `message` and `image` are then ignored. */
+  scene?: string;
+  /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, live = false, onEvent, signal } = opts;
+  const { lane, message, image, scene, live = false, onEvent, signal } = opts;
+  const snap = scene === undefined && message === undefined && image === undefined;
   const run = (token: string) =>
-    streamFetch(`${urlFor(lane)}/companion/${message === undefined ? 'snap' : 'stream'}`, {
+    streamFetch(`${urlFor(lane)}/companion/${scene !== undefined ? 'scene' : snap ? 'snap' : 'stream'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
-      body: message === undefined ? undefined : JSON.stringify({ message, live }),
+      body: scene !== undefined ? JSON.stringify({ id: scene }) : snap ? undefined : JSON.stringify({ message: message ?? '', image, live }),
       signal,
     });
 
@@ -211,8 +285,10 @@ export async function streamCompanion(opts: {
     res = await run(token);
   }
   if (res.status === 404)
-    throw new CompanionRefused(message === undefined ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
+    throw new CompanionRefused(scene !== undefined ? "This Mac's maestro is too old for scenes." : snap ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
   if (res.status === 409) throw new Error('She is still answering.');
+  if (res.status === 400 || res.status === 422)
+    throw new CompanionRefused(image ? 'The Mac could not read that photo (an older maestro cannot take photos at all).' : 'The Mac refused that message.');
   if (!res.ok) throw new CompanionRefused(`The Mac returned ${res.status}.`);
   if (!res.body) throw new Error('The Mac sent no response body.');
 
@@ -233,6 +309,7 @@ export async function streamCompanion(opts: {
       if (frame.event === 'status') onEvent({ kind: 'typing' });
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
       else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message });
+      else if (frame.event === 'retake') onEvent({ kind: 'retake' });
       else if (frame.event === 'photo_status') onEvent({ kind: 'photoStarted' });
       else if (frame.event === 'progress' && typeof data.done === 'number' && typeof data.total === 'number')
         onEvent({ kind: 'progress', done: data.done, total: data.total });
