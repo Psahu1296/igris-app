@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { ArrowUp, Camera, ChevronLeft, Heart, Trash2, UserRound } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
+import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
@@ -12,10 +12,12 @@ import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
+  CompanionRefused,
   fetchCompanion,
   forgetCompanion,
   PHOTO_ASPECT,
   setFace,
+  shown,
   streamCompanion,
   withoutTag,
   type CompanionMessage,
@@ -31,7 +33,16 @@ import { useSession } from '@/state/session';
  * transcript: bubbles, her words appearing as she types, one endless conversation. Mac
  * only, because her model is local. Her photos arrive after her words (maestro draws them
  * from her base face, ~75 s); any of them can be made the new base face.
+ *
+ * A turn belongs to the Mac, not to this screen: she answers, and her photo is taken,
+ * whether or not the phone is listening. The stream is only the live view of it. When it
+ * is lost (the screen went off, the app went to the background) the screen reads the turn
+ * back from the Mac and polls until it is done, so the reply is there on coming back.
  */
+const POLL_MS = 2500;
+/** How long to keep asking a Mac that stopped answering before saying so (~4 minutes). */
+const POLL_TRIES = 40;
+
 export default function CompanionScreen() {
   const { lane } = useSession();
   const [name, setName] = useState<string | null>(null);
@@ -48,21 +59,83 @@ export default function CompanionScreen() {
   const lastSend = useRef(0);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
+  const mounted = useRef(true);
+  // The live stream of a turn, while there is one; aborted when the app comes back, since
+  // a socket that slept with the screen may never say it died.
+  const stream = useRef<AbortController | null>(null);
+  const poll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  type SyncOpts = { lost?: string; tries?: number; first?: boolean };
+  // sync() asks again by timer; through a ref, since a callback cannot name itself.
+  const syncLater = useRef<(opts: SyncOpts) => void>(() => {});
 
-  useEffect(() => {
-    if (lane !== 'local') return;
-    let alive = true;
-    fetchCompanion(lane)
-      .then((c) => {
-        if (!alive) return;
+  /**
+   * Show what the Mac has: the saved chat and the turn in flight, asking again until the
+   * turn is done. `lost`: a message whose stream died, to put back in the box if it turns
+   * out never to have reached the Mac. `tries`: failed asks so far, while a turn is awaited.
+   */
+  const sync = useCallback(
+    async (opts: SyncOpts = {}) => {
+      if (poll.current) clearTimeout(poll.current);
+      poll.current = null;
+      const again = (next: SyncOpts) => {
+        poll.current = setTimeout(() => syncLater.current(next), POLL_MS);
+      };
+      try {
+        const c = await fetchCompanion(lane);
+        if (!mounted.current || stream.current) return; // a newer turn is streaming live
+        const view = shown(c);
         setName(c.name);
         setModel(c.model);
         setFaceName(c.face);
-        setMessages(c.messages);
-      })
-      .catch((e: unknown) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
+        setMessages(view.messages);
+        setLive(view.live);
+        setSnapping(view.snapping);
+        if (c.pending) {
+          setSendError(null);
+          again({});
+        } else if (opts.lost !== undefined) {
+          const lost = opts.lost;
+          if (c.messages.slice(-2).some((m) => m.role === 'you' && m.text === lost)) setSendError(null);
+          else {
+            setDraft((d) => d || lost);
+            setSendError('That message did not reach the Mac. Send it again.');
+          }
+        }
+      } catch (e) {
+        if (!mounted.current || stream.current) return;
+        const message = e instanceof Error ? e.message : String(e);
+        if (opts.first) setLoadError(message);
+        else if (opts.lost === undefined && opts.tries === undefined) return; // a quiet refresh; nothing awaited
+        else if ((opts.tries ?? 0) < POLL_TRIES) again({ lost: opts.lost, tries: (opts.tries ?? 0) + 1 });
+        else {
+          setLive(null);
+          setSnapping(null);
+          setSendError(`Lost the Mac: ${message}`);
+        }
+      }
+    },
+    [lane]
+  );
+
+  useEffect(() => {
+    syncLater.current = (opts) => void sync(opts);
+  }, [sync]);
+
+  useEffect(() => {
+    if (lane !== 'local') return;
+    mounted.current = true;
+    syncLater.current({ first: true }); // set by the effect above, which runs first
+    // Back from the background or a dark screen: whatever was streaming is stale.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      if (stream.current) stream.current.abort(); // send()'s catch picks the turn up
+      else syncLater.current({ tries: 0 });
+    });
     return () => {
-      alive = false;
+      mounted.current = false;
+      sub.remove();
+      if (poll.current) clearTimeout(poll.current);
+      stream.current?.abort();
     };
   }, [lane]);
 
@@ -87,10 +160,15 @@ export default function CompanionScreen() {
           ? m.map((msg) => (msg.at === herAt ? { ...msg, image } : msg))
           : [...m, { role: 'her', text: '', at: herAt, image }]
       );
+    const controller = new AbortController();
+    stream.current = controller;
+    // The stream was lost, not the turn: the Mac carries on, and sync() shows it.
+    let handedOver = false;
     try {
       await streamCompanion({
         lane,
         message: text,
+        signal: controller.signal,
         onEvent: (event) => {
           if (event.kind === 'token') {
             words += event.text;
@@ -112,15 +190,24 @@ export default function CompanionScreen() {
         },
       });
     } catch (e) {
-      setSendError(e instanceof Error ? e.message : String(e));
-      // Not saved on the Mac either: put the words back so they can be sent again.
-      setMessages((m) => m.filter((msg) => msg.at !== at));
-      setDraft(text);
+      if (e instanceof CompanionRefused) {
+        setSendError(e.message);
+        // Not saved on the Mac either: put the words back so they can be sent again.
+        setMessages((m) => m.filter((msg) => msg.at !== at));
+        setDraft(text);
+      } else {
+        handedOver = true;
+      }
     } finally {
-      setLive(null);
-      setSnapping(null);
+      if (stream.current === controller) stream.current = null;
+      if (handedOver) {
+        if (mounted.current) void sync({ lost: text, tries: 0 });
+      } else {
+        setLive(null);
+        setSnapping(null);
+      }
     }
-  }, [draft, live, snapping, lane]);
+  }, [draft, live, snapping, lane, sync]);
 
   const makeFace = (photo: CompanionPhoto) =>
     Alert.alert(`Make this ${name}'s face?`, 'Every photo she sends from now on is drawn from this one.', [

@@ -18,6 +18,27 @@ export type CompanionPhoto = { name: string; model: string; scene: string };
 
 export type CompanionMessage = { role: 'you' | 'her'; text: string; at: string; image?: CompanionPhoto };
 
+/**
+ * A turn still running on the Mac (api/companion.py `_pending`). The Mac finishes a turn
+ * whether or not the phone is listening, so a phone whose stream died reads it from here.
+ */
+export type CompanionPending = {
+  message: string;
+  at: string;
+  /** His message is in `messages` already; false while she is still typing. */
+  saved: boolean;
+  /** Her words so far, then her reply as it will be saved. */
+  text: string;
+  /** mflux's steps once a photo is being taken. */
+  photo: { done: number; total: number } | null;
+};
+
+/**
+ * The Mac itself said no (an `error` frame, a 4xx): the turn did not happen. Any other
+ * failure of the stream means only the stream was lost, and the turn may be running.
+ */
+export class CompanionRefused extends Error {}
+
 export type Companion = {
   name: string;
   age: number;
@@ -25,7 +46,28 @@ export type Companion = {
   /** The picture every photo of her is drawn from, or null before her first photo. */
   face: string | null;
   messages: CompanionMessage[];
+  /** Missing on a maestro from before 2026-09-30. */
+  pending?: CompanionPending | null;
 };
+
+/**
+ * What the chat shows for a snapshot from the Mac: the saved messages, plus the turn in
+ * flight. While she types, his message is not saved yet, so it is added here; while a
+ * photo is taken, her words are not saved yet (they are saved with the photo), so they are.
+ */
+export function shown(c: Companion): {
+  messages: CompanionMessage[];
+  /** Her words so far while she types, else null. */
+  live: string | null;
+  snapping: { done: number; total: number } | null;
+} {
+  const p = c.pending;
+  if (!p) return { messages: c.messages, live: null, snapping: null };
+  const messages = p.saved ? [...c.messages] : [...c.messages, { role: 'you' as const, text: p.message, at: p.at }];
+  if (!p.photo) return { messages, live: p.text, snapping: null };
+  if (p.text) messages.push({ role: 'her', text: p.text, at: `${p.at}+her` });
+  return { messages, live: null, snapping: p.photo };
+}
 
 /** Her photos are portrait, like a phone's (photos.SIZE, 768 × 960). */
 export const PHOTO_ASPECT = 768 / 960;
@@ -88,6 +130,10 @@ export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|
 /**
  * Send one message and stream her reply. The same bearer-token dance as streamChat: one
  * re-login on a 401, since signing in elsewhere evicts the phone's token.
+ *
+ * Throws CompanionRefused when the Mac refused the turn. Any other error (the socket died
+ * with the screen off, the stream ended early, a 409 because a turn is already running)
+ * leaves the turn to the Mac: read `pending` from fetchCompanion to pick it up.
  */
 export async function streamCompanion(opts: {
   lane: Lane;
@@ -110,11 +156,12 @@ export async function streamCompanion(opts: {
     // authedFetch re-logs in on a 401; a cheap GET lets it refresh the token first.
     await fetchCompanion(lane);
     token = await secure.loadToken(lane);
-    if (!token) throw new Error('Not signed in.');
+    if (!token) throw new CompanionRefused('Not signed in.');
     res = await run(token);
   }
-  if (res.status === 404) throw new Error("This Mac's maestro has no companion.");
-  if (!res.ok) throw new Error(`The Mac returned ${res.status}.`);
+  if (res.status === 404) throw new CompanionRefused("This Mac's maestro has no companion.");
+  if (res.status === 409) throw new Error('She is still answering.');
+  if (!res.ok) throw new CompanionRefused(`The Mac returned ${res.status}.`);
   if (!res.body) throw new Error('The Mac sent no response body.');
 
   const reader = res.body.getReader();
@@ -140,7 +187,8 @@ export async function streamCompanion(opts: {
       else if (frame.event === 'image' && data.name)
         onEvent({ kind: 'photo', photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '' } });
       else if (frame.event === 'photo_error') onEvent({ kind: 'photoFailed', message: data.message ?? 'The photo failed.' });
-      else if (frame.event === 'error') throw new Error(data.message ?? 'Something went wrong on the Mac.');
+      else if (frame.event === 'error') throw new CompanionRefused(data.message ?? 'Something went wrong on the Mac.');
     }
   }
+  throw new Error('The stream ended before she finished.');
 }
