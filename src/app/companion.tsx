@@ -13,6 +13,7 @@ import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
   CompanionRefused,
+  emotes,
   fetchCompanion,
   forgetCompanion,
   PHOTO_ASPECT,
@@ -407,7 +408,17 @@ function Bubble({
       ) : null}
       {text ? (
         <Text selectable style={mine ? styles.mineText : styles.hersText}>
-          {text}
+          {mine
+            ? text
+            : emotes(text).map((part, i) =>
+                part.action ? (
+                  <Text key={i} style={styles.action}>
+                    {part.text}
+                  </Text>
+                ) : (
+                  part.text
+                )
+              )}
         </Text>
       ) : null}
     </View>
@@ -513,6 +524,8 @@ const styles = StyleSheet.create({
   fillBar: { height: '100%', borderRadius: 2, backgroundColor: ROSE },
   mineText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
   hersText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
+  // What she does, between her words: a real italic face, a shade quieter than speech.
+  action: { fontFamily: Font.voiceItalic, color: Palette.muted },
   error: { color: Palette.alert, textAlign: 'center', marginTop: Space.sm },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Space.xl },
   centeredText: { textAlign: 'center', ...Type.small },

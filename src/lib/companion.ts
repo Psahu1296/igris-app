@@ -69,6 +69,24 @@ export function shown(c: Companion): {
   return { messages, live: null, snapping: p.photo };
 }
 
+/**
+ * Her words cut into what she says and what she does: she writes feelings and body
+ * language between asterisks ("*sharma ke*", maestro companion/persona.py), and the chat
+ * shows those in italics without the asterisks. An unclosed "*" (half a message, while
+ * it streams) stays as written.
+ */
+export function emotes(text: string): { text: string; action: boolean }[] {
+  const out: { text: string; action: boolean }[] = [];
+  let at = 0;
+  for (const m of text.matchAll(/\*([^*\n]{1,120})\*/g)) {
+    if (m.index > at) out.push({ text: text.slice(at, m.index), action: false });
+    out.push({ text: m[1].trim(), action: true });
+    at = m.index + m[0].length;
+  }
+  if (at < text.length) out.push({ text: text.slice(at), action: false });
+  return out;
+}
+
 /** Her photos are portrait, like a phone's (photos.SIZE, 768 × 960). */
 export const PHOTO_ASPECT = 768 / 960;
 
