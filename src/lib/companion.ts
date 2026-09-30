@@ -321,6 +321,10 @@ export const withoutTag = (text: string) =>
     // A tag still being written: "[", "[pho", "[private: on the", not yet closed.
     .replace(/\s*\[[a-z]{0,8}(?::[^\]]*)?$/i, '')
     .replace(/\s*\[(?:photo|selfie|pic|image|private|set)\s*:[^\]]*\]\s*/gi, ' ')
+    // Her hidden line (maestro companion/inner.py) is stripped on the Mac before this
+    // ever streams; this is a second net for the one seen live (2026-09-30), where she
+    // echoed the same tag again mid-reply.
+    .replace(/\s*\[(?:inner|feel|state)\s*:[^\]]*\]\s*/gi, ' ')
     .trimEnd();
 
 /**

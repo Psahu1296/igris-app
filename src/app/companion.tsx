@@ -495,7 +495,9 @@ export default function CompanionScreen() {
             ) : null}
             {messages.flatMap((m, i) => {
               // Her separate thoughts are separate texts; a photo keeps its words under it.
-              const parts = m.role === 'her' && !m.image ? bubbles(m.text) : [m.text];
+              // Saved text is already clean (maestro strips her hidden line before saving);
+              // withoutTag here is a second net, not the fix — see its own comment.
+              const parts = m.role === 'her' && !m.image ? bubbles(withoutTag(m.text)) : [m.text];
               return parts.map((part, j) => (
                 <Bubble
                   key={`${m.at}-${i}-${j}`}
