@@ -126,8 +126,12 @@ export const bubbles = (text: string): string[] => {
 
 /**
  * What the chat shows for a snapshot from the Mac: the saved messages, plus the turn in
- * flight. While she types, his message is not saved yet, so it is added here; while a
- * photo is taken, her words are not saved yet (they are saved with the photo), so they are.
+ * flight. While she types, his message is not saved yet, so it is added here; her words
+ * become a real message the moment they are finalized (`pending.saved`), whether or not a
+ * photo is still to come — not the moment the photo starts, which can now be many seconds
+ * later (artist.py writes the photo's prompt first). Getting this wrong showed her already-
+ * finished reply as a live preview a while longer, then swapped it for the "real" one the
+ * instant the photo began: read as a second, different reply (seen live 2026-09-30).
  */
 export function shown(c: Companion): {
   messages: CompanionMessage[];
@@ -139,9 +143,9 @@ export function shown(c: Companion): {
   if (!p) return { messages: c.messages, live: null, snapping: null };
   // A photo of his with no words has nothing to show until the Mac has saved it.
   const messages = p.saved || !p.message ? [...c.messages] : [...c.messages, { role: 'you' as const, text: p.message, at: p.at }];
-  if (!p.photo) return { messages, live: p.text, snapping: null };
-  if (p.text) messages.push({ role: 'her', text: p.text, at: `${p.at}+her` });
-  return { messages, live: null, snapping: p.photo };
+  if (!p.saved) return { messages, live: p.text, snapping: null };            // still typing
+  if (p.text) messages.push({ role: 'her', text: p.text, at: `${p.at}+her` }); // her words are final
+  return { messages, live: null, snapping: p.photo };                        // a photo may still be coming
 }
 
 /**
