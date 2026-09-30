@@ -24,6 +24,9 @@ export type CompanionPhoto = {
   uri?: string;
   /** A photo of hers he can open a single time (her `[private: …]` tag); see `seen`. */
   once?: boolean;
+  /** How long it took her to get this photo to him: writing its prompt (artist.py) plus
+   * mflux drawing it. Missing on a maestro from before 2026-10-01. */
+  seconds?: number;
 };
 
 export type CompanionMessage = {
@@ -34,6 +37,10 @@ export type CompanionMessage = {
   image?: CompanionPhoto;
   /** She wrote first, after a long silence (maestro companion/reach.py). */
   reach?: boolean;
+  /** How long her reply itself took, retakes included — not the photo, which has its own
+   * `image.seconds`. Missing on a text she sent with no words (a set's later photos) or a
+   * maestro from before 2026-10-01. */
+  took?: number;
 };
 
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
@@ -65,8 +72,13 @@ export type CompanionMemory = { at: string; kind: 'fact' | 'episode' | 'reflecti
 export type CompanionPending = {
   message: string;
   at: string;
-  /** His message is in `messages` already; false while she is still typing. */
+  /** His message is in `messages` already. True from the start on a turn with nothing of
+   * his to save (a double-text, a reach-out) — `done` is what says whether her words are
+   * finished, not this. Missing on a maestro from before 2026-10-01: treat as `done`. */
   saved: boolean;
+  /** Her words are final — not while she is still typing, even on a turn where `saved`
+   * was already true. Missing on a maestro from before 2026-10-01: treat as `saved`. */
+  done?: boolean;
   /** Her words so far, then her reply as it will be saved. */
   text: string;
   /** mflux's steps once a photo is being taken. */
@@ -143,7 +155,12 @@ export function shown(c: Companion): {
   if (!p) return { messages: c.messages, live: null, snapping: null };
   // A photo of his with no words has nothing to show until the Mac has saved it.
   const messages = p.saved || !p.message ? [...c.messages] : [...c.messages, { role: 'you' as const, text: p.message, at: p.at }];
-  if (!p.saved) return { messages, live: p.text, snapping: null };            // still typing
+  // `saved` alone is not enough: on an unasked turn (a double-text, a reach-out) it is
+  // true from the very start, since there is nothing of his to save, while she is still
+  // writing — `done` (older maestro: fall back to `saved`) is the one that means her
+  // words are final. Getting this wrong showed her half-written reply as the finished
+  // one (seen live 2026-10-01).
+  if (!(p.done ?? p.saved)) return { messages, live: p.text, snapping: null }; // still typing
   if (p.text) messages.push({ role: 'her', text: p.text, at: `${p.at}+her` }); // her words are final
   return { messages, live: null, snapping: p.photo };                        // a photo may still be coming
 }
@@ -305,7 +322,7 @@ export type CompanionEvent =
   /** Her words so far, as the model writes them. */
   | { kind: 'token'; text: string }
   /** The reply as saved. Can differ from the tokens: maestro replaces a reply that breaks its age rule. */
-  | { kind: 'reply'; text: string }
+  | { kind: 'reply'; text: string; seconds?: number }
   /** She is writing the reply again (it repeated her own lines): the words so far are void. */
   | { kind: 'retake' }
   /** She is busy: his message is saved and she answers later (`until`). No reply follows. */
@@ -313,7 +330,7 @@ export type CompanionEvent =
   /** After her words: a photo is being taken, its mflux steps, the photo, or why not. */
   | { kind: 'photoStarted' }
   | { kind: 'progress'; done: number; total: number }
-  | { kind: 'photo'; photo: CompanionPhoto }
+  | { kind: 'photo'; photo: CompanionPhoto }  // photo.seconds carries how long it took
   | { kind: 'photoFailed'; message: string };
 
 /**
@@ -394,7 +411,18 @@ export async function streamCompanion(opts: {
     if (done) break;
     for (const frame of parse(decoder.decode(value, { stream: true }))) {
       if (frame.event === 'done') return;
-      let data: { message?: string; text?: string; done?: number; total?: number; name?: string; model?: string; scene?: string; once?: boolean; until?: string };
+      let data: {
+        message?: string;
+        text?: string;
+        done?: number;
+        total?: number;
+        name?: string;
+        model?: string;
+        scene?: string;
+        once?: boolean;
+        until?: string;
+        seconds?: number;
+      };
       try {
         data = JSON.parse(frame.data);
       } catch {
@@ -402,7 +430,7 @@ export async function streamCompanion(opts: {
       }
       if (frame.event === 'status') onEvent({ kind: 'typing' });
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
-      else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message });
+      else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message, seconds: data.seconds });
       else if (frame.event === 'retake') onEvent({ kind: 'retake' });
       else if (frame.event === 'away' && data.until)
         onEvent({ kind: 'away', away: { until: data.until, reason: (data.message ?? '').replace(/^\S+ is /, '') || 'busy' } });
@@ -410,7 +438,10 @@ export async function streamCompanion(opts: {
       else if (frame.event === 'progress' && typeof data.done === 'number' && typeof data.total === 'number')
         onEvent({ kind: 'progress', done: data.done, total: data.total });
       else if (frame.event === 'image' && data.name)
-        onEvent({ kind: 'photo', photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '', once: data.once } });
+        onEvent({
+          kind: 'photo',
+          photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '', once: data.once, seconds: data.seconds },
+        });
       else if (frame.event === 'photo_error') onEvent({ kind: 'photoFailed', message: data.message ?? 'The photo failed.' });
       else if (frame.event === 'error') throw new CompanionRefused(data.message ?? 'Something went wrong on the Mac.');
     }

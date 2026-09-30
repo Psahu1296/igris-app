@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Clock, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -290,7 +290,7 @@ export default function CompanionScreen() {
             setLive(null);
             setMood(moodLine({ away: event.away }));
           } else if (event.kind === 'reply') {
-            if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt }]);
+            if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt, took: event.seconds }]);
             if (event.text && voiceMode.get()) speak(herAt, event.text);
             setLive(null);
           } else if (event.kind === 'photoStarted') {
@@ -511,6 +511,7 @@ export default function CompanionScreen() {
                   onOpenOnce={openOnce}
                   liked={liked.includes(m.at)}
                   onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
+                  seconds={m.role === 'her' && j === parts.length - 1 ? m.took : undefined}
                   speaking={speaking === m.at}
                   onSpeak={
                     m.role === 'her' && m.text && j === parts.length - 1 && canSpeak()
@@ -632,6 +633,7 @@ function Bubble({
   onLike,
   speaking = false,
   onSpeak,
+  seconds,
 }: {
   lane: Lane;
   mine: boolean;
@@ -649,6 +651,9 @@ function Bubble({
   speaking?: boolean;
   /** Her messages, on a build with her voice: says it, or stops it. */
   onSpeak?: () => void;
+  /** How long her reply took to generate (maestro api/companion.py); the image has its
+   * own time in `image.seconds`. Shown above the like/speak icons, her messages only. */
+  seconds?: number;
 }) {
   const bubble = (
     <View style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
@@ -710,6 +715,22 @@ function Bubble({
     <View style={styles.likeRow}>
       {bubble}
       <View>
+        {seconds != null || image?.seconds != null ? (
+          <View style={styles.timing}>
+            {seconds != null ? (
+              <View style={styles.timingRow}>
+                <Clock size={9} color={Palette.faint} />
+                <Meta style={styles.timingText}>{seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s</Meta>
+              </View>
+            ) : null}
+            {image?.seconds != null ? (
+              <View style={styles.timingRow}>
+                <Camera size={9} color={Palette.faint} />
+                <Meta style={styles.timingText}>{Math.round(image.seconds)}s</Meta>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
         {onSpeak ? (
           <PressableScale
             onPress={onSpeak}
@@ -829,6 +850,9 @@ const styles = StyleSheet.create({
   // The heart beside her bubble: faint until tapped.
   likeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
   like: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  timing: { alignItems: 'center', gap: 2, marginBottom: 4 },
+  timingRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  timingText: { color: Palette.faint, fontSize: 9 },
   faceBadge: {
     position: 'absolute',
     left: Space.sm,
