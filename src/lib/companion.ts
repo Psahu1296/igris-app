@@ -267,6 +267,12 @@ export async function likeMessage(lane: Lane, at: string, on: boolean): Promise<
   return ((await res.json()) as { liked: string[] }).liked;
 }
 
+/** Deletes one message, his or hers, from the Mac. Nothing else of hers moves. */
+export async function deleteMessage(lane: Lane, at: string): Promise<void> {
+  const res = await post(lane, '/companion/message/delete', { at });
+  if (!res.ok) throw new Error(res.status === 404 ? 'That message is already gone.' : `The Mac refused (${res.status}).`);
+}
+
 export async function setDial(lane: Lane, dial: CompanionDial): Promise<void> {
   const res = await authedFetch(lane, '/companion/dial', {
     method: 'PUT',

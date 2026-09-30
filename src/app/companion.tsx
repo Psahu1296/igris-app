@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { ArrowUp, Camera, ChevronLeft, Clock, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
@@ -23,6 +23,7 @@ import {
   fetchCompanion,
   forgetCompanion,
   lastCompanion,
+  deleteMessage,
   likeMessage,
   liveMode,
   markSeen,
@@ -353,6 +354,27 @@ export default function CompanionScreen() {
       });
   };
 
+  /** Deletes one message, his or hers, after he confirms; gone at once, put back if the
+   * Mac refuses. A photo's underlying file is not removed, only the message that showed it. */
+  const deleteMsg = (at: string) => {
+    Alert.alert('Delete this message?', 'This only removes it from the chat.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          const before = messages;
+          setMessages((m) => m.filter((msg) => msg.at !== at));
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          deleteMessage(lane, at).catch((e: unknown) => {
+            setMessages(before);
+            ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT);
+          });
+        },
+      },
+    ]);
+  };
+
   const turnDial = (next: CompanionDial) => {
     const before = dial;
     setDialState(next);
@@ -518,6 +540,7 @@ export default function CompanionScreen() {
                       ? () => (speaking === m.at ? quiet() : speak(m.at, m.text))
                       : undefined
                   }
+                  onDelete={() => deleteMsg(m.at)}
                 />
               ));
             })}
@@ -634,6 +657,7 @@ function Bubble({
   speaking = false,
   onSpeak,
   seconds,
+  onDelete,
 }: {
   lane: Lane;
   mine: boolean;
@@ -654,9 +678,14 @@ function Bubble({
   /** How long her reply took to generate (maestro api/companion.py); the image has its
    * own time in `image.seconds`. Shown above the like/speak icons, her messages only. */
   seconds?: number;
+  /** Long-press this message to delete it, his or hers. */
+  onDelete?: () => void;
 }) {
   const bubble = (
-    <View style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
+    <Pressable
+      onLongPress={onDelete}
+      delayLongPress={400}
+      style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
       {image?.uri ? (
         // His own photo, still only on the phone while the turn runs.
         <Image source={{ uri: image.uri }} style={styles.hisPhoto} contentFit="cover" />
@@ -706,7 +735,7 @@ function Bubble({
           )}
         </Text>
       ) : null}
-    </View>
+    </Pressable>
   );
   if (!onLike) return bubble;
   // The heart sits beside the bubble, in a row of its own: a child drawn outside its
