@@ -7,7 +7,9 @@ import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid,
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
+import { DiarySheet } from '@/components/companion/diary-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
+import { OncePhoto } from '@/components/companion/once-photo';
 import { CompanionTray } from '@/components/companion/tray';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
@@ -22,14 +24,18 @@ import {
   lastCompanion,
   likeMessage,
   liveMode,
+  markSeen,
   moodLine,
+  setDial,
   PHOTO_ASPECT,
   setFace,
   shown,
   streamCompanion,
   withEmote,
   withoutTag,
+  type CompanionDial,
   type CompanionMessage,
+  type CompanionOutfit,
   type CompanionPhoto,
   type CompanionScene,
 } from '@/lib/companion';
@@ -56,7 +62,9 @@ import { useSession } from '@/state/session';
  * a game, a photo of his, the mic. A heart on her message tells her what he liked.
  */
 /** What starts a turn besides the typed draft: the camera button, a scene card, a photo of his. */
-type Turn = { snap?: boolean; scene?: string; photo?: Photo };
+type Turn = { snap?: boolean; scene?: string; outfit?: string; photo?: Photo };
+/** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
+const IDLE_MS = 20_000;
 
 const POLL_MS = 2500;
 /** How long to keep asking a Mac that stopped answering before saying so (~4 minutes). */
@@ -84,7 +92,11 @@ export default function CompanionScreen() {
   const [mood, setMood] = useState<string | null>(seen ? moodLine(seen) : null);
   const [liked, setLiked] = useState<string[]>(seen?.liked ?? []);
   const [scenes, setScenes] = useState<CompanionScene[]>(seen?.scenes ?? []);
-  const [remembering, setRemembering] = useState(false);
+  const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
+  const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
+  // The open-once photos he has opened; the Mac keeps the list.
+  const [opened, setOpened] = useState<string[]>(seen?.seen ?? []);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | null>(null);
   // The mic: what he says lands in the message box, to be read before it is sent.
   const listening = useListening(lane, true);
   // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
@@ -123,6 +135,9 @@ export default function CompanionScreen() {
         setMood(moodLine(c));
         setLiked(c.liked ?? []);
         setScenes(c.scenes ?? []);
+        setOutfits(c.outfits ?? []);
+        setDialState(c.dial ?? null);
+        setOpened(c.seen ?? []);
         setMessages(view.messages);
         setLive(view.live);
         setSnapping(view.snapping);
@@ -167,8 +182,14 @@ export default function CompanionScreen() {
       if (stream.current) stream.current.abort(); // send()'s catch picks the turn up
       else syncLater.current({ tries: 0 });
     });
+    // She can speak without being asked (back from a meeting, a second text, a message
+    // after a long silence): an idle screen looks every so often. Never during a turn.
+    const idle = setInterval(() => {
+      if (!stream.current && !poll.current && AppState.currentState === 'active') syncLater.current({});
+    }, IDLE_MS);
     return () => {
       mounted.current = false;
+      clearInterval(idle);
       sub.remove();
       if (poll.current) clearTimeout(poll.current);
       stream.current?.abort();
@@ -177,11 +198,12 @@ export default function CompanionScreen() {
 
   /**
    * One turn. `snap`: the camera button, a photo of the moment with no message from him;
-   * `scene`: a scene card or a game, which she opens (the draft is left alone for both).
+   * `scene`: a scene card or a game, which she opens; `outfit`: what he picked for her to
+   * wear (the draft is left alone for all three).
    * Otherwise the draft is sent, with `photo` when he picked one (the draft may be empty then).
    */
   const send = useCallback(async (turn: Turn = {}) => {
-    const text = turn.snap || turn.scene !== undefined ? undefined : draft.trim();
+    const text = turn.snap || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -197,12 +219,13 @@ export default function CompanionScreen() {
     setLive('');
     let words = '';
     const herAt = new Date(Date.now() + 1).toISOString();
-    // Her photo joins her words' bubble, or stands alone when she sent only a photo.
+    // Her photo joins her words' bubble, or stands alone when she sent only a photo, or
+    // when it is a later photo of a set.
     const attach = (image: CompanionPhoto) =>
       setMessages((m) =>
-        m.some((msg) => msg.at === herAt)
+        m.some((msg) => msg.at === herAt && !msg.image)
           ? m.map((msg) => (msg.at === herAt ? { ...msg, image } : msg))
-          : [...m, { role: 'her', text: '', at: herAt, image }]
+          : [...m, { role: 'her', text: '', at: `${herAt}+${image.name}`, image }]
       );
     const controller = new AbortController();
     stream.current = controller;
@@ -214,6 +237,7 @@ export default function CompanionScreen() {
         message: text,
         image: turn.photo?.base64,
         scene: turn.scene,
+        outfit: turn.outfit,
         live: liveOn,
         signal: controller.signal,
         onEvent: (event) => {
@@ -223,6 +247,10 @@ export default function CompanionScreen() {
           } else if (event.kind === 'retake') {
             words = '';
             setLive('');
+          } else if (event.kind === 'away') {
+            // Saved on the Mac, not answered yet: the header says why, and the idle look finds her reply.
+            setLive(null);
+            setMood(moodLine({ away: event.away }));
           } else if (event.kind === 'reply') {
             if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt }]);
             setLive(null);
@@ -284,6 +312,22 @@ export default function CompanionScreen() {
         setLiked(before);
         ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT);
       });
+  };
+
+  const turnDial = (next: CompanionDial) => {
+    const before = dial;
+    setDialState(next);
+    void Haptics.selectionAsync();
+    setDial(lane, next).catch((e: unknown) => {
+      setDialState(before);
+      ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT);
+    });
+  };
+
+  /** He opened a photo that opens once. If the Mac never hears, it would open again: say so. */
+  const openOnce = (photo: CompanionPhoto) => {
+    setOpened((names) => [...names, photo.name]);
+    markSeen(lane, photo.name).catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT));
   };
 
   const talk = () => {
@@ -406,6 +450,8 @@ export default function CompanionScreen() {
                   image={m.image}
                   isFace={!!m.image && m.image.name === face}
                   onMakeFace={makeFace}
+                  opened={!!m.image && opened.includes(m.image.name)}
+                  onOpenOnce={openOnce}
                   liked={liked.includes(m.at)}
                   onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
                 />
@@ -439,17 +485,21 @@ export default function CompanionScreen() {
         {emoting ? (
           <CompanionTray
             scenes={scenes}
+            outfits={outfits}
+            dial={dial}
             busy={busy}
             accent={ROSE}
             onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
             onScene={(scene) => void send({ scene: scene.id })}
+            onOutfit={(outfit) => void send({ outfit: outfit.id })}
+            onDial={turnDial}
             onPhoto={(source) => void sendPhoto(source)}
-            onMemory={() => setRemembering(true)}
+            onMemory={() => setSheet('memory')}
+            onDiary={() => setSheet('diary')}
           />
         ) : null}
-        {remembering && name ? (
-          <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setRemembering(false)} />
-        ) : null}
+        {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         <View style={styles.composer}>
           <PressableScale
             onPress={() => void send({ snap: true })}
@@ -513,6 +563,8 @@ function Bubble({
   image,
   isFace = false,
   onMakeFace,
+  opened = false,
+  onOpenOnce,
   liked = false,
   onLike,
 }: {
@@ -522,6 +574,9 @@ function Bubble({
   image?: CompanionPhoto;
   isFace?: boolean;
   onMakeFace?: (photo: CompanionPhoto) => void;
+  /** An open-once photo he has already opened. */
+  opened?: boolean;
+  onOpenOnce?: (photo: CompanionPhoto) => void;
   liked?: boolean;
   /** Her saved messages only: puts a heart on it, or takes it off. */
   onLike?: () => void;
@@ -534,6 +589,10 @@ function Bubble({
       ) : image?.his ? (
         <View style={styles.photo}>
           <DrawnPicture lane={lane} picture={{ name: image.name, prompt: 'A photo you sent' }} />
+        </View>
+      ) : image?.once && onOpenOnce ? (
+        <View style={styles.photo}>
+          <OncePhoto lane={lane} photo={image} opened={opened} onOpen={() => onOpenOnce(image)} />
         </View>
       ) : image ? (
         <View style={styles.photo}>

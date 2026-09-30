@@ -22,6 +22,8 @@ export type CompanionPhoto = {
   his?: boolean;
   /** His photo while it is still only on the phone (the turn is running). */
   uri?: string;
+  /** A photo of hers he can open a single time (her `[private: …]` tag); see `seen`. */
+  once?: boolean;
 };
 
 export type CompanionMessage = {
@@ -36,6 +38,22 @@ export type CompanionMessage = {
 
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
 export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' };
+
+/** Tonight's dial (maestro companion/dial.py): how he wants a scene to go, and who leads. */
+export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch' };
+export const PACES = ['Tender', 'Slow burn', 'Playful', 'Intense', 'Wild'];
+export const LEADS: { id: CompanionDial['lead']; title: string }[] = [
+  { id: 'her', title: 'She leads' },
+  { id: 'him', title: 'You lead' },
+  { id: 'switch', title: 'Take turns' },
+];
+
+/** She is busy and will answer at `until` (maestro companion/presence.py). */
+export type CompanionAway = { until: string; reason: string };
+
+export type CompanionOutfit = { id: string; title: string };
+
+export type DiaryEntry = { date: string; text: string };
 
 /** One thing she has written down about the two of them (maestro companion/memory.py). */
 export type CompanionMemory = { at: string; kind: 'fact' | 'episode' | 'reflection'; text: string; weight: number };
@@ -75,12 +93,26 @@ export type Companion = {
   /** The `at` of each message of hers he put a heart on. */
   liked?: string[];
   scenes?: CompanionScene[];
+  away?: CompanionAway | null;
+  dial?: CompanionDial | null;
+  outfits?: CompanionOutfit[];
+  /** Names of the open-once photos he has opened. */
+  seen?: string[];
 };
 
-/** The header's second line when she is idle: her mood and where she is, once she has said. */
-export const moodLine = (c: Pick<Companion, 'state'>): string | null => {
+/**
+ * The header's second line when she is idle: that she is busy and when she is back, else
+ * her mood and where she is, once she has said.
+ */
+export const moodLine = (c: Pick<Companion, 'state' | 'away'>): string | null => {
+  if (c.away) return `${c.away.reason} · back around ${clock(c.away.until)}`;
   const parts = [c.state?.mood, c.state?.where].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
+};
+
+const clock = (iso: string) => {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? 'soon' : `${at.getHours() % 12 || 12}:${String(at.getMinutes()).padStart(2, '0')}`;
 };
 
 /**
@@ -193,6 +225,28 @@ export async function likeMessage(lane: Lane, at: string, on: boolean): Promise<
   return ((await res.json()) as { liked: string[] }).liked;
 }
 
+export async function setDial(lane: Lane, dial: CompanionDial): Promise<void> {
+  const res = await authedFetch(lane, '/companion/dial', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dial),
+  });
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for the dial." : `The Mac refused (${res.status}).`);
+}
+
+/** He opened a photo that opens once: the Mac remembers, so it stays shut on every later visit. */
+export async function markSeen(lane: Lane, name: string): Promise<void> {
+  const res = await post(lane, '/companion/seen', { name });
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+}
+
+/** Her diary, newest first. */
+export async function fetchDiary(lane: Lane): Promise<DiaryEntry[]> {
+  const res = await authedFetch(lane, '/companion/diary');
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her diary." : `The Mac refused (${res.status}).`);
+  return ((await res.json()) as { entries: DiaryEntry[] }).entries;
+}
+
 /** What she remembers, newest first. */
 export async function fetchMemory(lane: Lane): Promise<CompanionMemory[]> {
   const res = await authedFetch(lane, '/companion/memory');
@@ -229,6 +283,8 @@ export type CompanionEvent =
   | { kind: 'reply'; text: string }
   /** She is writing the reply again (it repeated her own lines): the words so far are void. */
   | { kind: 'retake' }
+  /** She is busy: his message is saved and she answers later (`until`). No reply follows. */
+  | { kind: 'away'; away: CompanionAway }
   /** After her words: a photo is being taken, its mflux steps, the photo, or why not. */
   | { kind: 'photoStarted' }
   | { kind: 'progress'; done: number; total: number }
@@ -239,7 +295,12 @@ export type CompanionEvent =
  * Her words as they stream, without the `[photo: …]` tag she ends a message with — the
  * tag is for maestro, and half of one ("[pho") shows up before it can be matched whole.
  */
-export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|photo|s|se|sel|self|selfi|selfie|pic|image)(?::[^\]]*)?\]?\s*$/i, '').replace(/\s*\[(?:photo|selfie|pic|image)\s*:[^\]]*\]\s*/gi, ' ').trimEnd();
+export const withoutTag = (text: string) =>
+  text
+    // A tag still being written: "[", "[pho", "[private: on the", not yet closed.
+    .replace(/\s*\[[a-z]{0,8}(?::[^\]]*)?$/i, '')
+    .replace(/\s*\[(?:photo|selfie|pic|image|private|set)\s*:[^\]]*\]\s*/gi, ' ')
+    .trimEnd();
 
 /**
  * Send one message and stream her reply (with `image`, a photo of his she can see); or,
@@ -260,18 +321,22 @@ export async function streamCompanion(opts: {
   image?: string;
   /** A scene card's id; `message` and `image` are then ignored. */
   scene?: string;
+  /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
+  outfit?: string;
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, live = false, onEvent, signal } = opts;
-  const snap = scene === undefined && message === undefined && image === undefined;
+  const { lane, message, image, scene, outfit, live = false, onEvent, signal } = opts;
+  // A card (a scene or an outfit) is sent by its id; the camera button sends nothing at all.
+  const card = scene !== undefined ? { path: 'scene', id: scene } : outfit !== undefined ? { path: 'outfit', id: outfit } : null;
+  const snap = !card && message === undefined && image === undefined;
   const run = (token: string) =>
-    streamFetch(`${urlFor(lane)}/companion/${scene !== undefined ? 'scene' : snap ? 'snap' : 'stream'}`, {
+    streamFetch(`${urlFor(lane)}/companion/${card ? card.path : snap ? 'snap' : 'stream'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
-      body: scene !== undefined ? JSON.stringify({ id: scene }) : snap ? undefined : JSON.stringify({ message: message ?? '', image, live }),
+      body: card ? JSON.stringify({ id: card.id }) : snap ? undefined : JSON.stringify({ message: message ?? '', image, live }),
       signal,
     });
 
@@ -285,7 +350,7 @@ export async function streamCompanion(opts: {
     res = await run(token);
   }
   if (res.status === 404)
-    throw new CompanionRefused(scene !== undefined ? "This Mac's maestro is too old for scenes." : snap ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
+    throw new CompanionRefused(card ? "This Mac's maestro is too old for that." : snap ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
   if (res.status === 409) throw new Error('She is still answering.');
   if (res.status === 400 || res.status === 422)
     throw new CompanionRefused(image ? 'The Mac could not read that photo (an older maestro cannot take photos at all).' : 'The Mac refused that message.');
@@ -300,7 +365,7 @@ export async function streamCompanion(opts: {
     if (done) break;
     for (const frame of parse(decoder.decode(value, { stream: true }))) {
       if (frame.event === 'done') return;
-      let data: { message?: string; text?: string; done?: number; total?: number; name?: string; model?: string; scene?: string };
+      let data: { message?: string; text?: string; done?: number; total?: number; name?: string; model?: string; scene?: string; once?: boolean; until?: string };
       try {
         data = JSON.parse(frame.data);
       } catch {
@@ -310,11 +375,13 @@ export async function streamCompanion(opts: {
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
       else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message });
       else if (frame.event === 'retake') onEvent({ kind: 'retake' });
+      else if (frame.event === 'away' && data.until)
+        onEvent({ kind: 'away', away: { until: data.until, reason: (data.message ?? '').replace(/^\S+ is /, '') || 'busy' } });
       else if (frame.event === 'photo_status') onEvent({ kind: 'photoStarted' });
       else if (frame.event === 'progress' && typeof data.done === 'number' && typeof data.total === 'number')
         onEvent({ kind: 'progress', done: data.done, total: data.total });
       else if (frame.event === 'image' && data.name)
-        onEvent({ kind: 'photo', photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '' } });
+        onEvent({ kind: 'photo', photo: { name: data.name, model: data.model ?? '', scene: data.scene ?? '', once: data.once } });
       else if (frame.event === 'photo_error') onEvent({ kind: 'photoFailed', message: data.message ?? 'The photo failed.' });
       else if (frame.event === 'error') throw new CompanionRefused(data.message ?? 'Something went wrong on the Mac.');
     }
