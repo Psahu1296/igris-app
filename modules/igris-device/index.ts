@@ -51,6 +51,9 @@ type IgrisDeviceModule = {
   /** Google TTS's offline Hindi voice; resolves when finished or stopped. */
   speakHindi(text: string): Promise<void>;
   stopHindi(): void;
+  /** The same, in a woman's voice. Missing on an APK from before v1.2.0. */
+  speakHindiWoman?(text: string): Promise<void>;
+  stopHindiWoman?(): void;
   /** One utterance through the phone's own recogniser; "" when nothing was said. */
   recognize(language: string): Promise<string>;
   /** Ends listening early; what was heard is still resolved. */

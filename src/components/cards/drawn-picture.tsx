@@ -2,9 +2,10 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { Check, Download } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { StyleSheet, ToastAndroid, View } from 'react-native';
+import { Pressable, StyleSheet, ToastAndroid, View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
+import { PhotoViewer } from '@/components/photo-viewer';
 import { Meta } from '@/components/typography';
 import { Palette, Space } from '@/constants/theme';
 import { saveDrawn } from '@/lib/gallery';
@@ -14,10 +15,12 @@ import { drawnSource, type Drawn, type Lane } from '@/lib/maestro';
  * A picture Igris drew, loaded from the Mac with the session token. Square, as
  * maestro draws it (imagine.IMAGE_SIZE), unless `aspect` (width / height) says otherwise. A failed load says so instead of leaving a
  * blank box — most often a conversation reopened on Render, which has no pictures.
+ * A tap opens it full screen (PhotoViewer).
  */
 export function DrawnPicture({ lane, picture, aspect = 1 }: { lane: Lane; picture: Drawn; aspect?: number }) {
   const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -33,14 +36,17 @@ export function DrawnPicture({ lane, picture, aspect = 1 }: { lane: Lane; pictur
   if (!source) return <View style={[styles.drawn, { aspectRatio: aspect }]} />;
   return (
     <View>
-      <Image
-        source={source}
-        style={[styles.drawn, { aspectRatio: aspect }]}
-        contentFit="cover"
-        transition={200}
-        accessibilityLabel={picture.prompt || 'A picture Igris drew'}
-        onError={() => setFailed(true)}
-      />
+      <Pressable onPress={() => setOpen(true)} accessibilityRole="imagebutton" accessibilityHint="Opens it full screen">
+        <Image
+          source={source}
+          style={[styles.drawn, { aspectRatio: aspect }]}
+          contentFit="cover"
+          transition={200}
+          accessibilityLabel={picture.prompt || 'A picture Igris drew'}
+          onError={() => setFailed(true)}
+        />
+      </Pressable>
+      <PhotoViewer source={open ? source : null} label={picture.prompt} onClose={() => setOpen(false)} />
       <SaveButton lane={lane} name={picture.name} />
       {picture.model ? <Meta style={styles.model}>Drawn with {picture.model}</Meta> : null}
     </View>

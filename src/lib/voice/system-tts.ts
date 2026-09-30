@@ -15,3 +15,16 @@ export async function speakHindi(text: string): Promise<void> {
 export async function stopHindi(): Promise<void> {
   IgrisDevice?.stopHindi();
 }
+
+/** Whether this build has the woman's voice (an APK from v1.2.0 on). */
+export const hasWomanVoice = () => typeof IgrisDevice?.speakHindiWoman === 'function';
+
+/** The same engine in a woman's voice; resolves when finished or stopped. */
+export async function speakHindiWoman(text: string): Promise<void> {
+  if (!IgrisDevice?.speakHindiWoman) throw new Error('This build has no woman\'s voice. Update the app.');
+  await IgrisDevice.speakHindiWoman(text);
+}
+
+export function stopHindiWoman(): void {
+  IgrisDevice?.stopHindiWoman?.();
+}

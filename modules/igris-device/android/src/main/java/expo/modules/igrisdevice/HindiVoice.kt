@@ -28,7 +28,14 @@ class HindiSpeechException(why: String) :
  * Offline only: a voice that needs the network would send the text — possibly a
  * WhatsApp message read from the shade — to Google. Such voices are never chosen.
  */
-class HindiVoice(private val context: Context) {
+class HindiVoice(
+  private val context: Context,
+  /** Voice names to try, best first. */
+  private val preferred: List<String> = MALE_VOICES,
+  /** Never the fallback: a woman's voice must not fall back to a man's. */
+  private val avoided: List<String> = emptyList(),
+  private val pitch: Float = 1f,
+) {
   private var tts: TextToSpeech? = null
   private var ready = false
   private var voice: Voice? = null
@@ -68,8 +75,9 @@ class HindiVoice(private val context: Context) {
     ready = false
   }
 
-  // A male voice, to sit closer to Alan. Google's voice names carry no gender field;
-  // MALE_VOICES lists the hi-IN ones that are male, best first. Falls back to any.
+  // Igris: a male voice, to sit closer to Alan. Google's voice names carry no gender
+  // field; MALE_VOICES and FEMALE_VOICES list the hi-IN ones, best first. Falls back to
+  // any offline Hindi voice that is not `avoided`, then to any at all.
   private fun pickVoice(engine: TextToSpeech): Voice? {
     val offline = engine.voices.orEmpty().filter {
       it.locale.language == Locale("hi").language &&
@@ -77,7 +85,8 @@ class HindiVoice(private val context: Context) {
         !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
     }
     Log.i(TAG, "offline Hindi voices: ${offline.map { it.name }}")
-    return MALE_VOICES.firstNotNullOfOrNull { name -> offline.firstOrNull { it.name.startsWith(name) } }
+    return preferred.firstNotNullOfOrNull { name -> offline.firstOrNull { it.name.startsWith(name) } }
+      ?: offline.filter { voice -> avoided.none { voice.name.startsWith(it) } }.maxByOrNull { it.quality }
       ?: offline.maxByOrNull { it.quality }
   }
 
@@ -98,6 +107,7 @@ class HindiVoice(private val context: Context) {
         ready = true
         val started = tts ?: return@synchronized
         started.setOnUtteranceProgressListener(listener)
+        started.setPitch(pitch)
         waiting.forEach { (_, act) -> act(started) }
         waiting.clear()
       }
@@ -126,6 +136,7 @@ class HindiVoice(private val context: Context) {
   companion object {
     private const val GOOGLE_TTS = "com.google.android.tts"
     private const val TAG = "IgrisHindi"
-    private val MALE_VOICES = listOf("hi-in-x-hie", "hi-in-x-hic")
+    val MALE_VOICES = listOf("hi-in-x-hie", "hi-in-x-hic")
+    val FEMALE_VOICES = listOf("hi-in-x-hia", "hi-in-x-hid")
   }
 }

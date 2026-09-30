@@ -50,6 +50,7 @@ private const val MAX_MATCHES = 12
  */
 class IgrisDeviceModule : Module() {
   private var hindi: HindiVoice? = null
+  private var woman: HindiVoice? = null
   private var ears: PhoneRecognizer? = null
 
   private fun ears(): PhoneRecognizer {
@@ -62,6 +63,7 @@ class IgrisDeviceModule : Module() {
 
     OnDestroy {
       hindi?.shutdown()
+      woman?.shutdown()
       ears?.shutdown()
     }
 
@@ -75,6 +77,20 @@ class IgrisDeviceModule : Module() {
 
     Function("stopHindi") {
       hindi?.stop()
+    }
+
+    // The same engine with a woman's voice, for a persona that is one. An engine of its
+    // own, so stopping one voice never cuts the other off.
+    AsyncFunction("speakHindiWoman") { text: String, promise: Promise ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val voice = woman ?: HindiVoice(
+        context.applicationContext, HindiVoice.FEMALE_VOICES, HindiVoice.MALE_VOICES, 1.08f,
+      ).also { woman = it }
+      voice.speak(text, promise)
+    }
+
+    Function("stopHindiWoman") {
+      woman?.stop()
     }
 
     // ── The phone's speech recogniser (PhoneRecognizer.kt) ──────────────────────

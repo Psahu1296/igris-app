@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Heart, Mic, Radio, Smile, Square, Trash2, UserRound } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { DiarySheet } from '@/components/companion/diary-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
 import { CompanionTray } from '@/components/companion/tray';
+import { PhotoViewer } from '@/components/photo-viewer';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
@@ -40,6 +41,7 @@ import {
   type CompanionPhoto,
   type CompanionScene,
 } from '@/lib/companion';
+import { canSpeak, hush, say, voiceMode } from '@/lib/companion-voice';
 import { drawingShare } from '@/lib/drawing-steps';
 import { drawnSource, type Lane, type Photo } from '@/lib/maestro';
 import { pickPhoto } from '@/lib/photo';
@@ -81,6 +83,20 @@ export default function CompanionScreen() {
   const [messages, setMessages] = useState<CompanionMessage[]>(view?.messages ?? []);
   // Live mode: a photo with every reply. Kept for the app's run, off at every start.
   const [liveOn, setLiveOn] = useState(liveMode.get);
+  // Her voice: every reply said aloud when on; `speaking` is the message being said now.
+  const [aloud, setAloud] = useState(voiceMode.get);
+  const [speaking, setSpeaking] = useState<string | null>(null);
+  const speak = useCallback((at: string, text: string) => {
+    setSpeaking(at);
+    say(text)
+      .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : 'Her voice did not start.', ToastAndroid.SHORT))
+      .finally(() => setSpeaking((now) => (now === at ? null : now)));
+  }, []);
+  const quiet = useCallback(() => {
+    hush();
+    setSpeaking(null);
+  }, []);
+  useEffect(() => hush, []);
   // The row of his own actions (*hugs you*) above the message box, opened by the smile button.
   const [emoting, setEmoting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -210,6 +226,7 @@ export default function CompanionScreen() {
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
     lastSend.current = now;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    quiet();
     setSendError(null);
     const at = new Date().toISOString();
     if (text !== undefined) {
@@ -260,6 +277,7 @@ export default function CompanionScreen() {
             setMood(moodLine({ away: event.away }));
           } else if (event.kind === 'reply') {
             if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt }]);
+            if (event.text && voiceMode.get()) speak(herAt, event.text);
             setLive(null);
           } else if (event.kind === 'photoStarted') {
             setSnapping({ done: 0, total: 0 });
@@ -296,7 +314,7 @@ export default function CompanionScreen() {
         if (mounted.current) void sync();
       }
     }
-  }, [draft, live, snapping, lane, sync, liveOn]);
+  }, [draft, live, snapping, lane, sync, liveOn, speak, quiet]);
 
   const sendPhoto = async (source: 'camera' | 'library') => {
     try {
@@ -414,6 +432,22 @@ export default function CompanionScreen() {
               <Text style={[styles.liveChipText, liveOn ? styles.liveChipTextOn : null]}>Live</Text>
             </PressableScale>
           ) : null}
+          {name !== null && lane === 'local' && canSpeak() ? (
+            <PressableScale
+              onPress={() => {
+                void Haptics.selectionAsync();
+                voiceMode.set(!aloud);
+                setAloud(!aloud);
+                if (aloud) quiet();
+              }}
+              hitSlop={10}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: aloud }}
+              accessibilityLabel="Say her replies aloud"
+              style={styles.iconButton}>
+              {aloud ? <Volume2 size={16} color={ROSE} /> : <VolumeX size={16} color={Palette.muted} />}
+            </PressableScale>
+          ) : null}
           {messages.length > 0 ? (
             <PressableScale
               onPress={forget}
@@ -461,6 +495,12 @@ export default function CompanionScreen() {
                   onOpenOnce={openOnce}
                   liked={liked.includes(m.at)}
                   onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
+                  speaking={speaking === m.at}
+                  onSpeak={
+                    m.role === 'her' && m.text && j === parts.length - 1 && canSpeak()
+                      ? () => (speaking === m.at ? quiet() : speak(m.at, m.text))
+                      : undefined
+                  }
                 />
               ));
             })}
@@ -574,6 +614,8 @@ function Bubble({
   onOpenOnce,
   liked = false,
   onLike,
+  speaking = false,
+  onSpeak,
 }: {
   lane: Lane;
   mine: boolean;
@@ -587,6 +629,10 @@ function Bubble({
   liked?: boolean;
   /** Her saved messages only: puts a heart on it, or takes it off. */
   onLike?: () => void;
+  /** This message is being said aloud right now. */
+  speaking?: boolean;
+  /** Her messages, on a build with her voice: says it, or stops it. */
+  onSpeak?: () => void;
 }) {
   const bubble = (
     <View style={[styles.bubble, mine ? styles.mine : styles.hers, image ? styles.withPhoto : null]}>
@@ -647,6 +693,17 @@ function Bubble({
   return (
     <View style={styles.likeRow}>
       {bubble}
+      <View>
+        {onSpeak ? (
+          <PressableScale
+            onPress={onSpeak}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={speaking ? 'Stop her voice' : 'Hear this message'}
+            style={styles.like}>
+            {speaking ? <Square size={11} color={ROSE} fill={ROSE} /> : <Volume2 size={14} color={Palette.faint} />}
+          </PressableScale>
+        ) : null}
       <PressableScale
           onPress={onLike}
           hitSlop={10}
@@ -656,6 +713,7 @@ function Bubble({
           style={styles.like}>
         <Heart size={14} color={liked ? ROSE : Palette.faint} fill={liked ? ROSE : 'transparent'} />
       </PressableScale>
+      </View>
     </View>
   );
 }
@@ -673,14 +731,26 @@ function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
       live = false;
     };
   }, [lane, face]);
-  return (
-    <View style={styles.avatar}>
-      {face && source ? (
-        <Image source={source} style={styles.avatarImage} contentFit="cover" />
-      ) : (
+  const [open, setOpen] = useState(false);
+  if (!face || !source) {
+    return (
+      <View style={styles.avatar}>
         <Heart size={16} color={ROSE} fill={ROSE} />
-      )}
-    </View>
+      </View>
+    );
+  }
+  return (
+    <>
+      <PressableScale
+        onPress={() => setOpen(true)}
+        hitSlop={6}
+        accessibilityRole="imagebutton"
+        accessibilityLabel="Her photo, full screen"
+        style={styles.avatar}>
+        <Image source={source} style={styles.avatarImage} contentFit="cover" />
+      </PressableScale>
+      <PhotoViewer source={open ? source : null} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
