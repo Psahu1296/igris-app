@@ -150,12 +150,33 @@ export function shown(c: Companion): {
  * chat shows those in italics without the asterisks. An unclosed "*" (half a message, while
  * it streams) stays as written.
  */
-export function emotes(text: string): { text: string; action: boolean }[] {
-  const out: { text: string; action: boolean }[] = [];
+export function emotes(text: string): { text: string; action: boolean; sound?: boolean }[] {
+  const out: { text: string; action: boolean; sound?: boolean }[] = [];
   let at = 0;
   for (const m of text.matchAll(/\*([^*\n]{1,120})\*/g)) {
-    if (m.index > at) out.push({ text: text.slice(at, m.index), action: false });
+    if (m.index > at) out.push(...voiced(text.slice(at, m.index)));
     out.push({ text: m[1].trim(), action: true });
+    at = m.index + m[0].length;
+  }
+  if (at < text.length) out.push(...voiced(text.slice(at)));
+  return out;
+}
+
+// A sound she makes, spelled out (maestro companion/express.py `_SOUND`, kept the same):
+// an interjection with its letters held, or any word with one letter three times over.
+const SOUND =
+  /\b(?:a+h{2,}|a{2,}h+|o+h{2,}|o{2,}h+|m{3,}h*|m{2,}h+|u+f{2,}|h+a{2,}h*|u+n+g?h{2,}|hu+h{2,}|s{3,}|hm{2,}|e{3,}|(?:ha){2,}h?|(?:he){2,}h?|\w*(\w)\1{2,}\w*)\b[.!?~-]*/gi;
+
+/** The sounds in `text`, in order (with repeats): what she is heard making. */
+export const sounds = (text: string): string[] => text.match(SOUND) ?? [];
+
+/** Spoken words cut into plain runs and the sounds between them, so a sound can look like one. */
+function voiced(text: string): { text: string; action: boolean; sound?: boolean }[] {
+  const out: { text: string; action: boolean; sound?: boolean }[] = [];
+  let at = 0;
+  for (const m of text.matchAll(SOUND)) {
+    if (m.index > at) out.push({ text: text.slice(at, m.index), action: false });
+    out.push({ text: m[0], action: false, sound: true });
     at = m.index + m[0].length;
   }
   if (at < text.length) out.push({ text: text.slice(at), action: false });

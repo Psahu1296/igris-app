@@ -30,6 +30,7 @@ import {
   PHOTO_ASPECT,
   setFace,
   shown,
+  sounds,
   streamCompanion,
   withEmote,
   withoutTag,
@@ -218,6 +219,7 @@ export default function CompanionScreen() {
     }
     setLive('');
     let words = '';
+    let felt = 0;
     const herAt = new Date(Date.now() + 1).toISOString();
     // Her photo joins her words' bubble, or stands alone when she sent only a photo, or
     // when it is a later photo of a set.
@@ -244,8 +246,13 @@ export default function CompanionScreen() {
           if (event.kind === 'token') {
             words += event.text;
             setLive(words);
+            // Each new sound of hers (ahh, mmm) is felt as it arrives.
+            const made = sounds(words).length;
+            if (made > felt) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            felt = made;
           } else if (event.kind === 'retake') {
             words = '';
+            felt = 0;
             setLive('');
           } else if (event.kind === 'away') {
             // Saved on the Mac, not answered yet: the header says why, and the idle look finds her reply.
@@ -622,6 +629,10 @@ function Bubble({
                   <Text key={i} style={styles.action}>
                     {part.text}
                   </Text>
+                ) : part.sound && !mine ? (
+                  <Text key={i} style={styles.sound}>
+                    {part.text}
+                  </Text>
                 ) : (
                   part.text
                 )
@@ -754,6 +765,8 @@ const styles = StyleSheet.create({
   hersText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
   // What she does, between her words: a real italic face, a shade quieter than speech.
   action: { fontFamily: Font.voiceItalic, color: Palette.muted },
+  // A sound she makes (ahh, mmm, huhh?!): her voice, not her words, so it leans and glows a little.
+  sound: { fontFamily: Font.voiceItalic, color: ROSE, letterSpacing: 0.6 },
   error: { color: Palette.alert, textAlign: 'center', marginTop: Space.sm },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Space.xl },
   centeredText: { textAlign: 'center', ...Type.small },
