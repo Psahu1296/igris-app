@@ -70,9 +70,9 @@ export function shown(c: Companion): {
 }
 
 /**
- * Her words cut into what she says and what she does: she writes feelings and body
- * language between asterisks ("*sharma ke*", maestro companion/persona.py), and the chat
- * shows those in italics without the asterisks. An unclosed "*" (half a message, while
+ * A message cut into what is said and what is done: feelings and body language go between
+ * asterisks ("*sharma ke*", maestro companion/persona.py), hers and his alike, and the
+ * chat shows those in italics without the asterisks. An unclosed "*" (half a message, while
  * it streams) stays as written.
  */
 export function emotes(text: string): { text: string; action: boolean }[] {
@@ -87,14 +87,43 @@ export function emotes(text: string): { text: string; action: boolean }[] {
   return out;
 }
 
+/**
+ * His side of the same thing: chips that put an action into the message he is writing, so
+ * she reads what he does and feels, not only what he says (her prompt tells her how).
+ */
+export const MY_EMOTES = [
+  'smiles', 'laughs', 'blushes', 'hugs you', 'kisses you', 'holds your hand', 'pulls you close',
+  'teasing', 'missing you', 'jealous', 'pouts', 'tired', 'sad', 'excited',
+];
+
+/** `draft` with the action added at its end, ready for more words. */
+export const withEmote = (draft: string, emote: string) => `${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}*${emote}* `;
+
 /** Her photos are portrait, like a phone's (photos.SIZE, 768 × 960). */
 export const PHOTO_ASPECT = 768 / 960;
+
+// The last snapshot the Mac gave, kept while the app is open: the screen opens on it at
+// once and refreshes behind it, where it used to show a loader on every visit. Memory
+// only, on purpose: her chat is never written to the phone's storage.
+let lastSeen: { lane: Lane; companion: Companion } | null = null;
+
+export const lastCompanion = (lane: Lane): Companion | null => (lastSeen?.lane === lane ? lastSeen.companion : null);
 
 export async function fetchCompanion(lane: Lane): Promise<Companion> {
   const res = await authedFetch(lane, '/companion');
   if (!res.ok) throw new Error(res.status === 404 ? 'Not here.' : `The Mac refused (${res.status}).`);
-  return (await res.json()) as Companion;
+  const companion = (await res.json()) as Companion;
+  lastSeen = { lane, companion };
+  return companion;
 }
+
+/**
+ * Live mode: a photo with every reply, so he sees her as she talks (maestro takes them
+ * smaller, since there is one per message). Off by default and again after every app
+ * start: each reply then waits on a photo.
+ */
+let liveOn = false;
+export const liveMode = { get: () => liveOn, set: (on: boolean) => void (liveOn = on) };
 
 /** Make one of her photos the base face all later photos are drawn from. */
 export async function setFace(lane: Lane, name: string): Promise<void> {
@@ -158,15 +187,17 @@ export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|
 export async function streamCompanion(opts: {
   lane: Lane;
   message?: string;
+  /** Live mode: she sends a photo with this reply. Ignored by the camera button. */
+  live?: boolean;
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, onEvent, signal } = opts;
+  const { lane, message, live = false, onEvent, signal } = opts;
   const run = (token: string) =>
     streamFetch(`${urlFor(lane)}/companion/${message === undefined ? 'snap' : 'stream'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
-      body: message === undefined ? undefined : JSON.stringify({ message }),
+      body: message === undefined ? undefined : JSON.stringify({ message, live }),
       signal,
     });
 

@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Heart, Trash2, UserRound } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Heart, Radio, Smile, Trash2, UserRound } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,10 +16,14 @@ import {
   emotes,
   fetchCompanion,
   forgetCompanion,
+  lastCompanion,
+  liveMode,
+  MY_EMOTES,
   PHOTO_ASPECT,
   setFace,
   shown,
   streamCompanion,
+  withEmote,
   withoutTag,
   type CompanionMessage,
   type CompanionPhoto,
@@ -46,17 +50,24 @@ const POLL_TRIES = 40;
 
 export default function CompanionScreen() {
   const { lane } = useSession();
-  const [name, setName] = useState<string | null>(null);
-  const [model, setModel] = useState('');
-  const [messages, setMessages] = useState<CompanionMessage[]>([]);
+  // Opens on what the Mac said last time (lib/companion lastCompanion), then refreshes.
+  const [seen] = useState(() => (lane === 'local' ? lastCompanion(lane) : null));
+  const [view] = useState(() => (seen ? shown(seen) : null));
+  const [name, setName] = useState<string | null>(seen?.name ?? null);
+  const [model, setModel] = useState(seen?.model ?? '');
+  const [messages, setMessages] = useState<CompanionMessage[]>(view?.messages ?? []);
+  // Live mode: a photo with every reply. Kept for the app's run, off at every start.
+  const [liveOn, setLiveOn] = useState(liveMode.get);
+  // The row of his own actions (*hugs you*) above the message box, opened by the smile button.
+  const [emoting, setEmoting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // Her reply in flight: null = idle, '' = typing, text = words so far.
-  const [live, setLive] = useState<string | null>(null);
+  const [live, setLive] = useState<string | null>(view?.live ?? null);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [face, setFaceName] = useState<string | null>(null);
+  const [face, setFaceName] = useState<string | null>(seen?.face ?? null);
   // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
-  const [snapping, setSnapping] = useState<{ done: number; total: number } | null>(null);
+  const [snapping, setSnapping] = useState<{ done: number; total: number } | null>(view?.snapping ?? null);
   const lastSend = useRef(0);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
@@ -175,6 +186,7 @@ export default function CompanionScreen() {
       await streamCompanion({
         lane,
         message: text,
+        live: liveOn,
         signal: controller.signal,
         onEvent: (event) => {
           if (event.kind === 'token') {
@@ -214,9 +226,22 @@ export default function CompanionScreen() {
       } else {
         setLive(null);
         setSnapping(null);
+        // Keep the snapshot the next visit opens on current; this screen already shows the turn.
+        void fetchCompanion(lane).catch(() => {});
       }
     }
-  }, [draft, live, snapping, lane, sync]);
+  }, [draft, live, snapping, lane, sync, liveOn]);
+
+  const toggleLive = () => {
+    const on = !liveOn;
+    liveMode.set(on);
+    setLiveOn(on);
+    void Haptics.selectionAsync();
+    ToastAndroid.show(
+      on ? `Live: ${name ?? 'she'} sends a photo with every reply. Replies take longer.` : 'Live is off.',
+      ToastAndroid.SHORT
+    );
+  };
 
   const makeFace = (photo: CompanionPhoto) =>
     Alert.alert(`Make this ${name}'s face?`, 'Every photo she sends from now on is drawn from this one.', [
@@ -267,6 +292,18 @@ export default function CompanionScreen() {
               {snapping ? 'sending a photo…' : busy ? 'typing…' : model ? `on ${model}` : ' '}
             </Meta>
           </View>
+          {name !== null && lane === 'local' ? (
+            <PressableScale
+              onPress={toggleLive}
+              hitSlop={8}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: liveOn }}
+              accessibilityLabel="Live: a photo with every reply"
+              style={[styles.liveChip, liveOn ? styles.liveChipOn : null]}>
+              <Radio size={13} color={liveOn ? Palette.ground : Palette.muted} />
+              <Text style={[styles.liveChipText, liveOn ? styles.liveChipTextOn : null]}>Live</Text>
+            </PressableScale>
+          ) : null}
           {messages.length > 0 ? (
             <PressableScale
               onPress={forget}
@@ -334,6 +371,25 @@ export default function CompanionScreen() {
           </ScrollView>
         )}
 
+        {emoting ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            style={styles.emotes}
+            contentContainerStyle={styles.emotesRow}>
+            {MY_EMOTES.map((emote) => (
+              <PressableScale
+                key={emote}
+                onPress={() => setDraft((d) => withEmote(d, emote))}
+                accessibilityRole="button"
+                accessibilityLabel={`Add: ${emote}`}
+                style={styles.emoteChip}>
+                <Text style={styles.emoteChipText}>{emote}</Text>
+              </PressableScale>
+            ))}
+          </ScrollView>
+        ) : null}
         <View style={styles.composer}>
           <PressableScale
             onPress={() => void send(true)}
@@ -343,6 +399,16 @@ export default function CompanionScreen() {
             accessibilityLabel={`Ask ${name ?? 'her'} for a photo of this moment`}
             style={[styles.snap, { opacity: busy || name === null ? 0.4 : 1 }]}>
             <Camera size={18} color={ROSE} />
+          </PressableScale>
+          <PressableScale
+            onPress={() => setEmoting((on) => !on)}
+            disabled={name === null || lane !== 'local'}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: emoting }}
+            accessibilityLabel="Add what you do or feel"
+            style={[styles.snap, emoting ? styles.snapOn : null, { opacity: name === null ? 0.4 : 1 }]}>
+            <Smile size={18} color={ROSE} />
           </PressableScale>
           <TextInput
             value={draft}
@@ -408,9 +474,7 @@ function Bubble({
       ) : null}
       {text ? (
         <Text selectable style={mine ? styles.mineText : styles.hersText}>
-          {mine
-            ? text
-            : emotes(text).map((part, i) =>
+          {emotes(text).map((part, i) =>
                 part.action ? (
                   <Text key={i} style={styles.action}>
                     {part.text}
@@ -418,7 +482,7 @@ function Bubble({
                 ) : (
                   part.text
                 )
-              )}
+          )}
         </Text>
       ) : null}
     </View>
@@ -552,6 +616,33 @@ const styles = StyleSheet.create({
     fontFamily: Font.ui,
     ...Type.ask,
   },
+  snapOn: { borderColor: ROSE },
+  // His actions, one tap each; sits on the message box like a keyboard's suggestion row.
+  emotes: { flexGrow: 0, borderTopWidth: 1, borderTopColor: Palette.hairline },
+  emotesRow: { gap: Space.sm, paddingHorizontal: Gutter - 6, paddingVertical: Space.sm },
+  emoteChip: {
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
+  emoteChipText: { fontFamily: Font.voiceItalic, fontSize: 14, color: Palette.text },
+  // The Live switch in the header: a quiet outline when off, filled when on.
+  liveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
+  liveChipOn: { backgroundColor: ROSE, borderColor: ROSE },
+  liveChipText: { fontFamily: Font.ui, fontSize: 12, color: Palette.muted },
+  liveChipTextOn: { color: Palette.ground },
   // The camera button: outlined, so it reads as the quieter of the two round buttons.
   snap: {
     width: 42,
