@@ -128,7 +128,9 @@ export type CompanionEvent =
 export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|photo|s|se|sel|self|selfi|selfie|pic|image)(?::[^\]]*)?\]?\s*$/i, '').replace(/\s*\[(?:photo|selfie|pic|image)\s*:[^\]]*\]\s*/gi, ' ').trimEnd();
 
 /**
- * Send one message and stream her reply. The same bearer-token dance as streamChat: one
+ * Send one message and stream her reply; or, with no `message`, the camera button: she
+ * sends a photo of the moment the chat is in, with a line of her own, and nothing of his
+ * is saved (maestro POST /companion/snap). The same bearer-token dance as streamChat: one
  * re-login on a 401, since signing in elsewhere evicts the phone's token.
  *
  * Throws CompanionRefused when the Mac refused the turn. Any other error (the socket died
@@ -137,16 +139,16 @@ export const withoutTag = (text: string) => text.replace(/\s*\[(?:p|ph|pho|phot|
  */
 export async function streamCompanion(opts: {
   lane: Lane;
-  message: string;
+  message?: string;
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   const { lane, message, onEvent, signal } = opts;
   const run = (token: string) =>
-    streamFetch(`${urlFor(lane)}/companion/stream`, {
+    streamFetch(`${urlFor(lane)}/companion/${message === undefined ? 'snap' : 'stream'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message }),
+      body: message === undefined ? undefined : JSON.stringify({ message }),
       signal,
     });
 
@@ -159,7 +161,8 @@ export async function streamCompanion(opts: {
     if (!token) throw new CompanionRefused('Not signed in.');
     res = await run(token);
   }
-  if (res.status === 404) throw new CompanionRefused("This Mac's maestro has no companion.");
+  if (res.status === 404)
+    throw new CompanionRefused(message === undefined ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
   if (res.status === 409) throw new Error('She is still answering.');
   if (!res.ok) throw new CompanionRefused(`The Mac returned ${res.status}.`);
   if (!res.body) throw new Error('The Mac sent no response body.');

@@ -139,17 +139,23 @@ export default function CompanionScreen() {
     };
   }, [lane]);
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
+  /**
+   * One turn. `snap`: the camera button, a photo of the moment with no message from him
+   * (the draft is left alone); otherwise the draft is sent.
+   */
+  const send = useCallback(async (snap = false) => {
+    const text = snap ? undefined : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
-    if (!text || live !== null || snapping || now - lastSend.current < 800) return;
+    if (text === '' || live !== null || snapping || now - lastSend.current < 800) return;
     lastSend.current = now;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setDraft('');
     setSendError(null);
     const at = new Date().toISOString();
-    setMessages((m) => [...m, { role: 'you', text, at }]);
+    if (text !== undefined) {
+      setDraft('');
+      setMessages((m) => [...m, { role: 'you', text, at }]);
+    }
     setLive('');
     let words = '';
     const herAt = new Date(Date.now() + 1).toISOString();
@@ -192,9 +198,11 @@ export default function CompanionScreen() {
     } catch (e) {
       if (e instanceof CompanionRefused) {
         setSendError(e.message);
-        // Not saved on the Mac either: put the words back so they can be sent again.
-        setMessages((m) => m.filter((msg) => msg.at !== at));
-        setDraft(text);
+        if (text !== undefined) {
+          // Not saved on the Mac either: put the words back so they can be sent again.
+          setMessages((m) => m.filter((msg) => msg.at !== at));
+          setDraft(text);
+        }
       } else {
         handedOver = true;
       }
@@ -326,6 +334,15 @@ export default function CompanionScreen() {
         )}
 
         <View style={styles.composer}>
+          <PressableScale
+            onPress={() => void send(true)}
+            disabled={busy || name === null || lane !== 'local'}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Ask ${name ?? 'her'} for a photo of this moment`}
+            style={[styles.snap, { opacity: busy || name === null ? 0.4 : 1 }]}>
+            <Camera size={18} color={ROSE} />
+          </PressableScale>
           <TextInput
             value={draft}
             onChangeText={setDraft}
@@ -521,6 +538,16 @@ const styles = StyleSheet.create({
     color: Palette.text,
     fontFamily: Font.ui,
     ...Type.ask,
+  },
+  // The camera button: outlined, so it reads as the quieter of the two round buttons.
+  snap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Palette.hairline,
   },
   send: {
     width: 42,
