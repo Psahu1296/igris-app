@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "note": "Igris downloadable assets, fetched at runtime from EXPO_PUBLIC_ASSET_MANIFEST_URL so a new model never needs an app rebuild. v2 replaced the two loose Piper files with the sherpa-onnx bundle: sherpa needs tokens.txt and espeak-ng-data/ for phonemisation, which Piper's own .onnx.json does not provide. v5 dropped the on-device speech recogniser: the phone records and maestro's /stt transcribes on the Mac, which is both far more accurate and 107MB lighter. Repoint url at this repo's GitHub Release once assets-v1 is cut (PLAN.md decision #9).",
+  "version": 6,
+  "note": "Igris downloadable assets, fetched at runtime from EXPO_PUBLIC_ASSET_MANIFEST_URL so a new model never needs an app rebuild. v2 replaced the two loose Piper files with the sherpa-onnx bundle: sherpa needs tokens.txt and espeak-ng-data/ for phonemisation, which Piper's own .onnx.json does not provide. v5 dropped the on-device speech recogniser: the phone records and maestro's /stt transcribes on the Mac, which is both far more accurate and 107MB lighter. v6 added neural Hindi voices (Android's own hi-IN TTS is formant, not neural, and stayed robotic however the text was prepared): 'voice-hi' replaces it for Igris, 'voice-seema' for the companion. Both are optional — missing or not yet downloaded, speech falls back to the phone's built-in Hindi voice, same as before v6. Repoint url at this repo's GitHub Release once assets-v1 is cut (PLAN.md decision #9).",
   "assets": [
     {
       "id": "voice",
@@ -15,6 +15,34 @@
       "md5": "f1ee3881f1db4515487f5d5cf2a0600a",
       "extractedBytes": 82837504,
       "requiredFor": "speech"
+    },
+    {
+      "id": "voice-hi",
+      "kind": "archive",
+      "title": "Igris Hindi voice",
+      "detail": "Piper hi_IN-pratham-medium: a neural Hindi voice for Hindi and Hinglish sentences, in place of the phone's own flat Hindi voice.",
+      "file": "vits-piper-hi_IN-pratham-medium.tar.bz2",
+      "dir": "vits-piper-hi_IN-pratham-medium",
+      "probe": "tokens.txt",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-pratham-medium.tar.bz2",
+      "bytes": 67238438,
+      "md5": "4d42d5225ec01556c82074ffa472c745",
+      "extractedBytes": 81143043,
+      "requiredFor": "speech-hi"
+    },
+    {
+      "id": "voice-seema",
+      "kind": "archive",
+      "title": "Seema's voice",
+      "detail": "Piper hi_IN-priyamvada-medium: her voice in the companion chat, in place of the phone's own flat Hindi voice.",
+      "file": "vits-piper-hi_IN-priyamvada-medium.tar.bz2",
+      "dir": "vits-piper-hi_IN-priyamvada-medium",
+      "probe": "tokens.txt",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-priyamvada-medium.tar.bz2",
+      "bytes": 67240610,
+      "md5": "5adf2940456242c0c10df528f2fae4f1",
+      "extractedBytes": 81143049,
+      "requiredFor": "companion-speech"
     }
   ]
 }

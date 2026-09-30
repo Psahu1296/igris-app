@@ -41,7 +41,7 @@ import {
   type CompanionPhoto,
   type CompanionScene,
 } from '@/lib/companion';
-import { canSpeak, hush, say, voiceMode } from '@/lib/companion-voice';
+import { canSpeak, hush, releaseSeemaVoice, say, voiceMode } from '@/lib/companion-voice';
 import { drawingShare } from '@/lib/drawing-steps';
 import { drawnSource, type Lane, type Photo } from '@/lib/maestro';
 import { pickPhoto } from '@/lib/photo';
@@ -96,7 +96,13 @@ export default function CompanionScreen() {
     hush();
     setSpeaking(null);
   }, []);
-  useEffect(() => hush, []);
+  useEffect(
+    () => () => {
+      hush();
+      void releaseSeemaVoice();
+    },
+    []
+  );
   // The row of his own actions (*hugs you*) above the message box, opened by the smile button.
   const [emoting, setEmoting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -237,6 +243,12 @@ export default function CompanionScreen() {
     setLive('');
     let words = '';
     let felt = 0;
+    // A retake throws the draft away for a fresh one (repeat.py, express.py on the Mac):
+    // showing it fully formed and then swapping it for something unrelated read as a
+    // second, different reply. Once it fires, stay on the typing dots — silently, since
+    // the kept message always arrives whole in the `reply` event below, not built from
+    // `words` — until she actually has something she is keeping.
+    let retaking = false;
     const herAt = new Date(Date.now() + 1).toISOString();
     // Her photo joins her words' bubble, or stands alone when she sent only a photo, or
     // when it is a later photo of a set.
@@ -261,6 +273,7 @@ export default function CompanionScreen() {
         signal: controller.signal,
         onEvent: (event) => {
           if (event.kind === 'token') {
+            if (retaking) return; // a thrown-away draft is never shown, only the one she keeps
             words += event.text;
             setLive(words);
             // Each new sound of hers (ahh, mmm) is felt as it arrives.
@@ -268,6 +281,7 @@ export default function CompanionScreen() {
             if (made > felt) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             felt = made;
           } else if (event.kind === 'retake') {
+            retaking = true;
             words = '';
             felt = 0;
             setLive('');

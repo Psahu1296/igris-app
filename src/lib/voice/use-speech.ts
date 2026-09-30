@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ToastAndroid } from 'react-native';
 
 import { fetchManifest, type AssetSpec } from '@/lib/assets/manifest';
@@ -49,12 +49,22 @@ export function useSpeakingId(): string | null {
  */
 export function useSpeech() {
   const [voice, setVoice] = useState<AssetSpec | null>(null);
+  const [hindiVoice, setHindiVoice] = useState<AssetSpec | null>(null);
+  // The specs a cleanup needs are read from here, not from `voice`/`hindiVoice` state:
+  // an unmount effect closes over the value from the render that registered it, which
+  // for a mount effect is always the initial null — this ref holds the current one.
+  const specs = useRef<{ voice: AssetSpec | null; hindi: AssetSpec | null }>({ voice: null, hindi: null });
 
   useEffect(() => {
     let cancelled = false;
     fetchManifest()
       .then((manifest) => {
-        if (!cancelled) setVoice(manifest.assets.find((a) => a.id === 'voice') ?? null);
+        if (cancelled) return;
+        const found = manifest.assets.find((a) => a.id === 'voice') ?? null;
+        const hindi = manifest.assets.find((a) => a.id === 'voice-hi') ?? null;
+        specs.current = { voice: found, hindi };
+        setVoice(found);
+        setHindiVoice(hindi);
       })
       .catch(() => {
         // The transcript works fine without a voice; don't surface a network
@@ -63,7 +73,7 @@ export function useSpeech() {
 
     return () => {
       cancelled = true;
-      void releaseSpeaker();
+      void releaseSpeaker(specs.current.voice, specs.current.hindi);
     };
   }, []);
 
@@ -95,7 +105,7 @@ export function useSpeech() {
       const owner = id ?? null;
       setSpeaking(owner);
       try {
-        const tts = await getSpeaker(voice);
+        const tts = await getSpeaker(voice, hindiVoice);
         await tts.speak(text);
       } catch (err) {
         // Was stored in state that nothing rendered — a failure looked like silence.
@@ -106,19 +116,19 @@ export function useSpeech() {
         if (speakingId === owner) setSpeaking(null);
       }
     },
-    [voice]
+    [voice, hindiVoice]
   );
 
   const stop = useCallback(async () => {
     if (!voice || !speechStatus(voice).ready) return;
     try {
-      const tts = await getSpeaker(voice);
+      const tts = await getSpeaker(voice, hindiVoice);
       await tts.stop();
       setSpeaking(null);
     } catch {
       // Nothing was playing, or the engine is already gone. Either is fine.
     }
-  }, [voice]);
+  }, [voice, hindiVoice]);
 
   return { available, speak, stop };
 }

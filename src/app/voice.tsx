@@ -56,7 +56,9 @@ export default function Voice() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Answer style={styles.lede}>
-          Igris speaks with the Piper voice model on-device. Assets download on demand to keep the binary small.
+          Igris and the companion chat speak with Piper voice models, on-device. English always works; the Hindi
+          ones here replace the phone&rsquo;s own flat Hindi voice once downloaded. Assets download on demand to
+          keep the binary small.
         </Answer>
 
         {loadError ? (

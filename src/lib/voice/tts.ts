@@ -14,7 +14,9 @@ import { speakHindi, stopHindi } from '@/lib/voice/system-tts';
  * This mirrors maestro/voice/factory.py deliberately: callers depend on the `Tts`
  * interface and the accessors here, never on a concrete engine. Naming a concrete
  * engine anywhere else welds that provider in and breaks the swap — the same rule
- * the Python voice layer states in its README.
+ * the Python voice layer states in its README. `SherpaTts` is the one place that
+ * touches `react-native-sherpa-onnx`; a second voice (Hindi, the companion's) is
+ * another instance of it, not a new class.
  */
 
 export interface Tts {
@@ -49,10 +51,10 @@ export function speechStatus(voice: AssetSpec | undefined): SpeechStatus {
  * an assistant and a progress bar — JARVIS_GAPS #7.
  */
 class SherpaTts implements Tts {
-  readonly provider = 'sherpa-onnx · piper en_GB-alan';
   private speaking = false;
 
   constructor(
+    readonly provider: string,
     private readonly engine: StreamingTtsEngine,
     private readonly sampleRate: number
   ) {}
@@ -92,22 +94,67 @@ class SherpaTts implements Tts {
   }
 }
 
+// One sherpa engine per voice (keyed by asset id, not just "the" voice): Igris's English
+// and Hindi voices and the companion's voice can all be loaded at once, since each is a
+// separate persona/screen. Creating one loads ~79MB into native memory, so each is built
+// once and reused, not per utterance — releaseVoice drops it when a screen no longer needs it.
+const cache = new Map<string, { path: string; tts: SherpaTts }>();
+
+async function load(spec: AssetSpec): Promise<SherpaTts> {
+  const path = modelPath(spec);
+  const existing = cache.get(spec.id);
+  if (existing?.path === path) return existing.tts;
+  if (existing) {
+    await existing.tts.stop().catch(() => {});
+    await existing.tts.destroy().catch(() => {});
+  }
+  const engine = await createStreamingTTS({ modelPath: { type: 'file', path }, modelType: 'vits' });
+  const sampleRate = await engine.getSampleRate();
+  const tts = new SherpaTts(`sherpa-onnx · piper ${spec.id}`, engine, sampleRate);
+  cache.set(spec.id, { path, tts });
+  return tts;
+}
+
+/** One voice on its own, no language mixing — the companion's, whose whole chat (mostly
+ * Hinglish) is read in a single voice rather than split like Igris's English/Hindi mix. */
+export async function getVoice(spec: AssetSpec): Promise<Tts> {
+  return load(spec);
+}
+
+/** Stops it without waiting — for a synchronous cleanup (a screen's unmount, a toggle). */
+export function stopVoice(spec: AssetSpec): void {
+  cache.get(spec.id)?.tts.stop().catch(() => {});
+}
+
+export async function releaseVoice(spec: AssetSpec | null | undefined): Promise<void> {
+  if (!spec) return;
+  const existing = cache.get(spec.id);
+  if (!existing) return;
+  cache.delete(spec.id);
+  await existing.tts.stop().catch(() => {});
+  await existing.tts.destroy().catch(() => {});
+}
+
 /**
- * Alan for English, the phone's Hindi voice for Hindi and Hinglish sentences
- * (language.ts decides). One utterance can switch voices at sentence boundaries —
- * audible, but a mispronounced Hindi sentence is worse than a change of voice.
- *
- * Offline-only by construction: the Hindi voice must be a "-local" one, so a message
- * read aloud from the notification shade never goes to Google's servers. Without
- * one, Alan says the sentence as best he can.
+ * Alan for English; for Hindi and Hinglish (language.ts decides), a neural Piper Hindi
+ * voice when `hindiVoice` was given and is downloaded, else the phone's own flat Hindi
+ * voice (system-tts.ts) — so a fresh install still speaks Hindi, just less naturally,
+ * instead of going silent on half of every mixed sentence. One utterance can switch
+ * voices at sentence boundaries — audible, but a mispronounced Hindi sentence is worse
+ * than a change of voice.
  */
 class MixedTts implements Tts {
-  readonly provider = 'piper en_GB-alan + system hi-IN';
+  readonly provider: string;
   // Bumped by every stop() and speak(): a sentence loop that sees a newer generation
   // stops, so interrupting a mixed utterance does not let its next sentence start.
   private generation = 0;
 
-  constructor(private readonly english: SherpaTts) {}
+  constructor(
+    private readonly english: SherpaTts,
+    private readonly hindi: SherpaTts | null
+  ) {
+    this.provider = `${english.provider}${hindi ? ` + ${hindi.provider}` : ' + system hi-IN'}`;
+  }
 
   async speak(text: string): Promise<void> {
     await this.stop();
@@ -117,6 +164,10 @@ class MixedTts implements Tts {
     for (const segment of segments(spellOut(toSpeech(text)))) {
       if (this.generation !== mine) return;
       if (segment.lang === 'hi') {
+        if (this.hindi) {
+          await this.hindi.speak(toDevanagari(segment.text));
+          continue;
+        }
         try {
           await speakHindi(toDevanagari(segment.text));
           continue;
@@ -130,38 +181,28 @@ class MixedTts implements Tts {
 
   async stop(): Promise<void> {
     this.generation++;
-    await Promise.all([this.english.stop(), stopHindi().catch(() => {})]);
-  }
-
-  destroy() {
-    return this.english.destroy();
+    await Promise.all([this.english.stop(), this.hindi?.stop() ?? Promise.resolve(), stopHindi().catch(() => {})]);
   }
 }
 
-// One engine per model directory. Creating a sherpa engine loads ~79MB of model
-// into native memory, so it is built once and reused, not per utterance.
-let cached: { path: string; tts: MixedTts } | null = null;
-
-export async function getSpeaker(voice: AssetSpec): Promise<Tts> {
-  const path = modelPath(voice);
-  if (cached?.path === path) return cached.tts;
-
-  await releaseSpeaker();
-
-  const engine = await createStreamingTTS({
-    modelPath: { type: 'file', path },
-    modelType: 'vits', // Piper voices are VITS
-  });
-  const sampleRate = await engine.getSampleRate();
-
-  cached = { path, tts: new MixedTts(new SherpaTts(engine, sampleRate)) };
-  return cached.tts;
+/** `hindi`: the Hindi voice to prefer, when given and downloaded; otherwise the phone's
+ * own Hindi voice speaks those sentences (unchanged from before v6). */
+export async function getSpeaker(voice: AssetSpec, hindi?: AssetSpec | null): Promise<Tts> {
+  const english = await load(voice);
+  let hindiEngine: SherpaTts | null = null;
+  if (hindi && modelState(hindi) === 'ready') {
+    try {
+      hindiEngine = await load(hindi);
+    } catch {
+      hindiEngine = null;
+    }
+  }
+  return new MixedTts(english, hindiEngine);
 }
 
-export async function releaseSpeaker(): Promise<void> {
-  if (!cached) return;
-  const { tts } = cached;
-  cached = null;
-  await tts.stop().catch(() => {});
-  await tts.destroy().catch(() => {});
+/** Releases whichever of `voices` are actually loaded. Stray `null`/`undefined` (a
+ * voice not yet known, or none configured) are ignored, so a caller can always pass
+ * every spec it knows about without checking each one first. */
+export async function releaseSpeaker(...voices: (AssetSpec | null | undefined)[]): Promise<void> {
+  await Promise.all(voices.map((spec) => releaseVoice(spec)));
 }
