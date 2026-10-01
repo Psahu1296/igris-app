@@ -14,6 +14,9 @@ import * as secure from '@/lib/secure';
  */
 
 /** A photo she sent (maestro companion/photos.py), drawn on the Mac from her base face. */
+/** Which eyes a photo of hers is seen from again: his, or hers. */
+export type PhotoView = { name: string; view: 'his' | 'hers' };
+
 export type CompanionPhoto = {
   name: string;
   model: string;
@@ -377,18 +380,29 @@ export async function streamCompanion(opts: {
   outfit?: string;
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
+  /** One of her photos again from his eyes or hers (maestro POST /companion/view): no words,
+   * frames like the camera button's. Ignores the rest. */
+  view?: PhotoView;
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, live = false, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, live = false, view, onEvent, signal } = opts;
   // A card (a scene or an outfit) is sent by its id; the camera button sends nothing at all.
   const card = scene !== undefined ? { path: 'scene', id: scene } : outfit !== undefined ? { path: 'outfit', id: outfit } : null;
-  const snap = !card && message === undefined && image === undefined;
+  const snap = !card && !view && message === undefined && image === undefined;
+  const path = view ? 'view' : card ? card.path : snap ? 'snap' : 'stream';
+  const body = view
+    ? JSON.stringify(view)
+    : card
+      ? JSON.stringify({ id: card.id })
+      : snap
+        ? undefined
+        : JSON.stringify({ message: message ?? '', image, live });
   const run = (token: string) =>
-    streamFetch(`${urlFor(lane)}/companion/${card ? card.path : snap ? 'snap' : 'stream'}`, {
+    streamFetch(`${urlFor(lane)}/companion/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
-      body: card ? JSON.stringify({ id: card.id }) : snap ? undefined : JSON.stringify({ message: message ?? '', image, live }),
+      body,
       signal,
     });
 
@@ -401,6 +415,7 @@ export async function streamCompanion(opts: {
     if (!token) throw new CompanionRefused('Not signed in.');
     res = await run(token);
   }
+  if (res.status === 404 && view) throw new CompanionRefused("That photo is gone, or this Mac's maestro is too old for views.");
   if (res.status === 404)
     throw new CompanionRefused(card ? "This Mac's maestro is too old for that." : snap ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
   if (res.status === 409) throw new Error('She is still answering.');

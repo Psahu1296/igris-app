@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Clock, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronLeft, Clock, Eye, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,6 +40,7 @@ import {
   type CompanionMessage,
   type CompanionOutfit,
   type CompanionPhoto,
+  type PhotoView,
   type CompanionScene,
 } from '@/lib/companion';
 import { canSpeak, hush, releaseSeemaVoice, say, voiceMode } from '@/lib/companion-voice';
@@ -66,7 +67,7 @@ import { useSession } from '@/state/session';
  * a game, a photo of his, the mic. A heart on her message tells her what he liked.
  */
 /** What starts a turn besides the typed draft: the camera button, a scene card, a photo of his. */
-type Turn = { snap?: boolean; scene?: string; outfit?: string; photo?: Photo };
+type Turn = { snap?: boolean; scene?: string; outfit?: string; photo?: Photo; view?: PhotoView };
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
 
@@ -227,7 +228,8 @@ export default function CompanionScreen() {
    * Otherwise the draft is sent, with `photo` when he picked one (the draft may be empty then).
    */
   const send = useCallback(async (turn: Turn = {}) => {
-    const text = turn.snap || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
+    const text =
+      turn.snap || turn.view || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -270,6 +272,7 @@ export default function CompanionScreen() {
         image: turn.photo?.base64,
         scene: turn.scene,
         outfit: turn.outfit,
+        view: turn.view,
         live: liveOn,
         signal: controller.signal,
         onEvent: (event) => {
@@ -529,6 +532,7 @@ export default function CompanionScreen() {
                   image={m.image}
                   isFace={!!m.image && m.image.name === face}
                   onMakeFace={makeFace}
+                  onView={(photo, view) => void send({ view: { name: photo.name, view } })}
                   opened={!!m.image && opened.includes(m.image.name)}
                   onOpenOnce={openOnce}
                   liked={liked.includes(m.at)}
@@ -650,6 +654,7 @@ function Bubble({
   image,
   isFace = false,
   onMakeFace,
+  onView,
   opened = false,
   onOpenOnce,
   liked = false,
@@ -665,6 +670,8 @@ function Bubble({
   image?: CompanionPhoto;
   isFace?: boolean;
   onMakeFace?: (photo: CompanionPhoto) => void;
+  /** Her photo again, from his eyes or hers (a new photo, about two and a half minutes). */
+  onView?: (photo: CompanionPhoto, view: PhotoView['view']) => void;
   /** An open-once photo he has already opened. */
   opened?: boolean;
   onOpenOnce?: (photo: CompanionPhoto) => void;
@@ -715,6 +722,22 @@ function Bubble({
               <UserRound size={11} color={Palette.text} />
               <Meta style={styles.faceBadgeText}>Use as face</Meta>
             </PressableScale>
+          ) : null}
+          {onView ? (
+            <View style={styles.viewRow}>
+              {(['his', 'hers'] as const).map((v) => (
+                <PressableScale
+                  key={v}
+                  onPress={() => onView(image, v)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={v === 'his' ? 'This moment from your eyes' : 'This moment from her eyes'}
+                  style={styles.viewBadge}>
+                  <Eye size={11} color={Palette.text} />
+                  <Meta style={styles.faceBadgeText}>{v === 'his' ? 'Your view' : 'Her view'}</Meta>
+                </PressableScale>
+              ))}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -895,6 +918,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(9, 8, 14, 0.7)',
   },
   faceBadgeText: { color: Palette.text },
+  viewRow: { position: 'absolute', left: Space.sm, bottom: Space.sm, flexDirection: 'row', gap: Space.xs + 2 },
+  viewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Space.sm,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(9, 8, 14, 0.7)',
+  },
   snapping: { width: '78%', gap: Space.sm, paddingVertical: Space.md },
   snapRow: { flexDirection: 'row', alignItems: 'center', gap: Space.xs + 2 },
   snapText: { color: Palette.muted, ...Type.small },
