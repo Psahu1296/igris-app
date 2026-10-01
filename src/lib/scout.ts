@@ -16,7 +16,8 @@ export type ScoutStarted = { id: string; exam: string; years: number[] };
 export type ScoutPaper = {
   /** The exam asked for, or a related one in the same pattern (maestro scout/related.py). */
   exam: string;
-  year: number;
+  /** null for a job's study plan, which is a file of the job but not a paper. */
+  year: number | null;
   file: string;
   /** Where it was found. */
   url: string;
@@ -30,6 +31,9 @@ export type ScoutPaper = {
 export type ScoutJob = {
   id: string;
   thread_id: string;
+  /** papers: find and check exam papers; exam_plan: research an exam and write a study plan
+   * (maestro research/), kept as an HTML page plus any papers it checked. */
+  kind: 'papers' | 'exam_plan';
   exam: string;
   years: number[];
   status: 'queued' | 'running' | 'done' | 'failed' | 'interrupted';
@@ -49,8 +53,11 @@ export async function scoutJobs(lane: Lane): Promise<ScoutJob[]> {
   return body.jobs ?? [];
 }
 
+/** A job's study plan page (maestro research/job.py), as opposed to a paper. */
+export const isPlan = (file: string) => file.endsWith('.html');
+
 /**
- * Open a paper in the browser, which saves or shows it. The link is fetched fresh at
+ * Open a paper or a study plan in the browser, which saves or shows it. The link is fetched fresh at
  * the tap, because links expire and a card may have sat in the transcript for hours.
  * A link rather than an in-app viewer: showing a PDF inside the app needs a
  * FileProvider, which is native code and a new APK.
@@ -58,7 +65,7 @@ export async function scoutJobs(lane: Lane): Promise<ScoutJob[]> {
 export async function openPaper(lane: Lane, jobId: string, file: string): Promise<void> {
   const job = (await scoutJobs(lane)).find((j) => j.id === jobId);
   const paper = job?.found.find((p) => p.file === file);
-  if (!paper) throw new Error('That paper is no longer on the Mac.');
+  if (!paper) throw new Error('That file is no longer on the Mac.');
   await Linking.openURL(`${urlFor(lane)}${paper.link}`);
 }
 

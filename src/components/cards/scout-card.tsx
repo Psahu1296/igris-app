@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { FileText, SearchCheck } from 'lucide-react-native';
+import { BookOpen, FileText, SearchCheck } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 
@@ -7,7 +7,7 @@ import { PressableScale } from '@/components/pressable-scale';
 import { Meta } from '@/components/typography';
 import { Palette, Space } from '@/constants/theme';
 import type { Lane } from '@/lib/config';
-import { openPaper, scoutJobs, type ScoutJob } from '@/lib/scout';
+import { isPlan, openPaper, scoutJobs, type ScoutJob, type ScoutPaper } from '@/lib/scout';
 
 import { shared } from './styles';
 
@@ -25,8 +25,9 @@ export function ScoutPending({ accent }: { accent: string }) {
 }
 
 /**
- * A Scout job's papers, each one downloaded and checked on the Mac (maestro scout/),
- * on the report turn. Loaded by id, so a reopened conversation shows it too.
+ * A Scout job's files on the report turn: papers, each downloaded and checked on the Mac
+ * (maestro scout/), and for an exam_plan job the study plan page first (maestro
+ * research/). Loaded by id, so a reopened conversation shows it too.
  */
 export function ScoutCard({ lane, jobId, accent }: { lane: Lane; jobId: string; accent: string }) {
   const [job, setJob] = useState<ScoutJob | null | 'missing'>(null);
@@ -64,20 +65,20 @@ export function ScoutCard({ lane, jobId, accent }: { lane: Lane; jobId: string; 
     <View style={[shared.callCard, { borderColor: accent + '33' }]}>
       <View style={shared.chatHead}>
         <SearchCheck size={14} color={accent} />
-        <Text style={shared.chatTitle}>{`${job.exam} papers`}</Text>
+        <Text style={shared.chatTitle}>{`${job.exam} ${job.kind === 'exam_plan' ? 'plan' : 'papers'}`}</Text>
       </View>
-      {job.found.map((paper) => (
+      {[...job.found].sort((a, b) => Number(isPlan(b.file)) - Number(isPlan(a.file))).map((paper) => (
         <PressableScale
           key={paper.file}
           onPress={() => void open(paper.file)}
           accessibilityRole="button"
-          accessibilityLabel={`Open the ${paper.exam} ${paper.year} paper`}
+          accessibilityLabel={isPlan(paper.file) ? `Open the ${paper.exam} study plan` : `Open the ${paper.exam} ${paper.year} paper`}
           style={styles.row}>
-          <FileText size={18} color={accent} />
+          {isPlan(paper.file) ? <BookOpen size={18} color={accent} /> : <FileText size={18} color={accent} />}
           <View style={shared.callWho}>
-            <Text style={shared.callName}>{paper.exam === job.exam ? paper.year : `${paper.exam} ${paper.year}`}</Text>
+            <Text style={shared.callName}>{titleOf(paper, job.exam)}</Text>
             <Text style={shared.callNumber} numberOfLines={1}>
-              {`${paper.why} · ${hostOf(paper.url)}`}
+              {paper.url ? `${paper.why} · ${hostOf(paper.url)}` : paper.why}
             </Text>
           </View>
           {opening === paper.file ? (
@@ -93,6 +94,9 @@ export function ScoutCard({ lane, jobId, accent }: { lane: Lane; jobId: string; 
     </View>
   );
 }
+
+const titleOf = (paper: ScoutPaper, exam: string) =>
+  isPlan(paper.file) ? 'Study plan' : paper.exam === exam ? String(paper.year) : `${paper.exam} ${paper.year}`;
 
 const hostOf = (url: string) => url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
 
