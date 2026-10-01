@@ -522,7 +522,9 @@ export default function CompanionScreen() {
               // Her separate thoughts are separate texts; a photo keeps its words under it.
               // Saved text is already clean (maestro strips her hidden line before saving);
               // withoutTag here is a second net, not the fix — see its own comment.
-              const parts = m.role === 'her' && !m.image ? bubbles(withoutTag(m.text)) : [m.text];
+              // A message with her photo is cleaned too: a tag the Mac failed to read (one of
+              // 913 characters, 2026-10-02) was saved in her words and shown under the photo.
+              const parts = m.role !== 'her' ? [m.text] : m.image ? [withoutTag(m.text).trim()] : bubbles(withoutTag(m.text));
               return parts.map((part, j) => (
                 <Bubble
                   key={`${m.at}-${i}-${j}`}
