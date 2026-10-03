@@ -94,7 +94,21 @@ export type CompanionPending = {
  */
 export class CompanionRefused extends Error {}
 
+/** One of the companions on the Mac (maestro companion/profiles.py), for the picker. */
+export type CompanionListing = { id: string; name: string; age: number; face: string | null; busy: boolean };
+
+/**
+ * Which companion every call here is about: maestro takes `?who=` on each route, its own
+ * default when absent ('' here). Kept for the app's run, like liveMode; the screen
+ * remounts on a switch.
+ */
+let whoNow = '';
+export const companionWho = { get: () => whoNow, set: (who: string) => void (whoNow = who) };
+const whoPath = (path: string) => (whoNow ? `${path}?who=${encodeURIComponent(whoNow)}` : path);
+
 export type Companion = {
+  /** Her id in `companions`. Missing on a maestro from before 2026-10-03. */
+  id?: string;
   name: string;
   age: number;
   model: string;
@@ -113,6 +127,8 @@ export type Companion = {
   outfits?: CompanionOutfit[];
   /** Names of the open-once photos he has opened. */
   seen?: string[];
+  /** Every companion on the Mac. Missing on a maestro from before 2026-10-03 (one companion only). */
+  companions?: CompanionListing[];
 };
 
 /**
@@ -225,15 +241,16 @@ export const PHOTO_ASPECT = 768 / 960;
 // The last snapshot the Mac gave, kept while the app is open: the screen opens on it at
 // once and refreshes behind it, where it used to show a loader on every visit. Memory
 // only, on purpose: her chat is never written to the phone's storage.
-let lastSeen: { lane: Lane; companion: Companion } | null = null;
+let lastSeen: { lane: Lane; who: string; companion: Companion } | null = null;
 
-export const lastCompanion = (lane: Lane): Companion | null => (lastSeen?.lane === lane ? lastSeen.companion : null);
+export const lastCompanion = (lane: Lane): Companion | null =>
+  lastSeen?.lane === lane && lastSeen.who === whoNow ? lastSeen.companion : null;
 
 export async function fetchCompanion(lane: Lane): Promise<Companion> {
-  const res = await authedFetch(lane, '/companion');
+  const res = await authedFetch(lane, whoPath('/companion'));
   if (!res.ok) throw new Error(res.status === 404 ? 'Not here.' : `The Mac refused (${res.status}).`);
   const companion = (await res.json()) as Companion;
-  lastSeen = { lane, companion };
+  lastSeen = { lane, who: whoNow, companion };
   return companion;
 }
 
@@ -247,7 +264,7 @@ export const liveMode = { get: () => liveOn, set: (on: boolean) => void (liveOn 
 
 /** Make one of her photos the base face all later photos are drawn from. */
 export async function setFace(lane: Lane, name: string): Promise<void> {
-  const res = await authedFetch(lane, '/companion/face', {
+  const res = await authedFetch(lane, whoPath('/companion/face'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -256,7 +273,7 @@ export async function setFace(lane: Lane, name: string): Promise<void> {
 }
 
 export async function forgetCompanion(lane: Lane): Promise<void> {
-  const res = await authedFetch(lane, '/companion', { method: 'DELETE' });
+  const res = await authedFetch(lane, whoPath('/companion'), { method: 'DELETE' });
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
@@ -265,19 +282,19 @@ const post = (lane: Lane, path: string, body: unknown) =>
 
 /** Put a heart on a message of hers, or take it off. She is shown the lines he loved. */
 export async function likeMessage(lane: Lane, at: string, on: boolean): Promise<string[]> {
-  const res = await post(lane, '/companion/like', { at, on });
+  const res = await post(lane, whoPath('/companion/like'), { at, on });
   if (!res.ok) throw new Error(res.status === 404 ? 'That message is not saved on the Mac yet.' : `The Mac refused (${res.status}).`);
   return ((await res.json()) as { liked: string[] }).liked;
 }
 
 /** Deletes one message, his or hers, from the Mac. Nothing else of hers moves. */
 export async function deleteMessage(lane: Lane, at: string): Promise<void> {
-  const res = await post(lane, '/companion/message/delete', { at });
+  const res = await post(lane, whoPath('/companion/message/delete'), { at });
   if (!res.ok) throw new Error(res.status === 404 ? 'That message is already gone.' : `The Mac refused (${res.status}).`);
 }
 
 export async function setDial(lane: Lane, dial: CompanionDial): Promise<void> {
-  const res = await authedFetch(lane, '/companion/dial', {
+  const res = await authedFetch(lane, whoPath('/companion/dial'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dial),
@@ -287,26 +304,26 @@ export async function setDial(lane: Lane, dial: CompanionDial): Promise<void> {
 
 /** He opened a photo that opens once: the Mac remembers, so it stays shut on every later visit. */
 export async function markSeen(lane: Lane, name: string): Promise<void> {
-  const res = await post(lane, '/companion/seen', { name });
+  const res = await post(lane, whoPath('/companion/seen'), { name });
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
 /** Her diary, newest first. */
 export async function fetchDiary(lane: Lane): Promise<DiaryEntry[]> {
-  const res = await authedFetch(lane, '/companion/diary');
+  const res = await authedFetch(lane, whoPath('/companion/diary'));
   if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her diary." : `The Mac refused (${res.status}).`);
   return ((await res.json()) as { entries: DiaryEntry[] }).entries;
 }
 
 /** What she remembers, newest first. */
 export async function fetchMemory(lane: Lane): Promise<CompanionMemory[]> {
-  const res = await authedFetch(lane, '/companion/memory');
+  const res = await authedFetch(lane, whoPath('/companion/memory'));
   if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her memory." : `The Mac refused (${res.status}).`);
   return ((await res.json()) as { items: CompanionMemory[] }).items;
 }
 
 export async function forgetMemory(lane: Lane, item: CompanionMemory): Promise<void> {
-  const res = await post(lane, '/companion/memory/forget', { at: item.at, text: item.text });
+  const res = await post(lane, whoPath('/companion/memory/forget'), { at: item.at, text: item.text });
   if (!res.ok && res.status !== 404) throw new Error(`The Mac refused (${res.status}).`);
 }
 
@@ -399,7 +416,7 @@ export async function streamCompanion(opts: {
         ? undefined
         : JSON.stringify({ message: message ?? '', image, live });
   const run = (token: string) =>
-    streamFetch(`${urlFor(lane)}/companion/${path}`, {
+    streamFetch(`${urlFor(lane)}${whoPath(`/companion/${path}`)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
       body,
@@ -418,7 +435,13 @@ export async function streamCompanion(opts: {
   if (res.status === 404 && view) throw new CompanionRefused("That photo is gone, or this Mac's maestro is too old for views.");
   if (res.status === 404)
     throw new CompanionRefused(card ? "This Mac's maestro is too old for that." : snap ? "This Mac's maestro is too old for the camera button." : "This Mac's maestro has no companion.");
-  if (res.status === 409) throw new Error('She is still answering.');
+  if (res.status === 409) {
+    // Another companion's turn is running (one at a time on the Mac): nothing of this one
+    // is pending, so it is a refusal to show, not a turn to wait for.
+    const detail = ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? '';
+    if (detail.includes('one at a time')) throw new CompanionRefused(detail);
+    throw new Error('She is still answering.');
+  }
   if (res.status === 400 || res.status === 422)
     throw new CompanionRefused(image ? 'The Mac could not read that photo (an older maestro cannot take photos at all).' : 'The Mac refused that message.');
   if (!res.ok) throw new CompanionRefused(`The Mac returned ${res.status}.`);

@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronLeft, Clock, Eye, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +18,7 @@ import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
   bubbles,
+  companionWho,
   CompanionRefused,
   emotes,
   fetchCompanion,
@@ -37,6 +38,7 @@ import {
   withEmote,
   withoutTag,
   type CompanionDial,
+  type CompanionListing,
   type CompanionMessage,
   type CompanionOutfit,
   type CompanionPhoto,
@@ -75,7 +77,20 @@ const POLL_MS = 2500;
 /** How long to keep asking a Mac that stopped answering before saying so (~4 minutes). */
 const POLL_TRIES = 40;
 
+/**
+ * Which companion is open (maestro companion/profiles.py). A switch remounts the chat by
+ * its key, so nothing of one (her messages, a turn being polled, her mood) shows in the other.
+ */
 export default function CompanionScreen() {
+  const [who, setWho] = useState(companionWho.get);
+  const pick = useCallback((next: string) => {
+    companionWho.set(next);
+    setWho(next);
+  }, []);
+  return <CompanionChat key={who} onSwitch={pick} />;
+}
+
+function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const { lane } = useSession();
   // Opens on what the Mac said last time (lib/companion lastCompanion), then refreshes.
   const [seen] = useState(() => (lane === 'local' ? lastCompanion(lane) : null));
@@ -121,6 +136,9 @@ export default function CompanionScreen() {
   const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
   // The open-once photos he has opened; the Mac keeps the list.
   const [opened, setOpened] = useState<string[]>(seen?.seen ?? []);
+  const [others, setOthers] = useState<CompanionListing[]>(
+    (seen?.companions ?? []).filter((c) => c.id !== seen?.id)
+  );
   const [sheet, setSheet] = useState<'memory' | 'diary' | null>(null);
   // The mic: what he says lands in the message box, to be read before it is sent.
   const listening = useListening(lane, true);
@@ -163,6 +181,7 @@ export default function CompanionScreen() {
         setOutfits(c.outfits ?? []);
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
+        setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
         setMessages(view.messages);
         setLive(view.live);
         setSnapping(view.snapping);
@@ -399,6 +418,15 @@ export default function CompanionScreen() {
     else void listening.start((heard) => setDraft((d) => (d ? `${d} ${heard}` : heard)));
   };
 
+  // The other companions on the Mac, one tap each (Android's alert holds three buttons:
+  // two companions to switch to and Cancel; a longer list will want a sheet).
+  const switchTo = () => {
+    Alert.alert('Talk to', undefined, [
+      ...others.slice(0, 2).map((o) => ({ text: o.busy ? `${o.name} (replying…)` : o.name, onPress: () => onSwitch(o.id) })),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  };
+
   const toggleLive = () => {
     const on = !liveOn;
     liveMode.set(on);
@@ -453,12 +481,20 @@ export default function CompanionScreen() {
             <ChevronLeft size={18} color={Palette.text} />
           </PressableScale>
           <Avatar lane={lane} face={face} />
-          <View style={styles.headerText}>
-            <Title style={styles.name}>{name ?? ' '}</Title>
+          <Pressable
+            style={styles.headerText}
+            disabled={others.length === 0}
+            onPress={switchTo}
+            accessibilityRole="button"
+            accessibilityLabel={others.length ? `Talking to ${name ?? 'her'}. Switch companion` : undefined}>
+            <View style={styles.nameRow}>
+              <Title style={styles.name}>{name ?? ' '}</Title>
+              {others.length ? <ChevronDown size={16} color={Palette.muted} /> : null}
+            </View>
             <Meta numberOfLines={1}>
               {snapping ? 'sending a photo…' : busy ? 'typing…' : (mood ?? (model ? `on ${model}` : ' '))}
             </Meta>
-          </View>
+          </Pressable>
           {name !== null && lane === 'local' ? (
             <PressableScale
               onPress={toggleLive}
@@ -891,6 +927,7 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: '100%', height: '100%' },
   headerText: { flex: 1, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { fontSize: 20, lineHeight: 24 },
   list: { paddingHorizontal: Gutter - 6, paddingVertical: Space.lg, gap: Space.sm },
   hello: { textAlign: 'center', marginTop: Space.huge, marginHorizontal: Space.xl },
