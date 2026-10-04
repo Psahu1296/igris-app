@@ -125,8 +125,7 @@ export function DirectorSheet({
   const together = (choice.together ?? director?.defaults.together) === 'together';
   const shown = (f: DirectorField) =>
     (f.id !== 'pose' || ACT_LEVELS.includes(level) || !!choice.pose) &&
-    (f.id !== 'him' || together) &&
-    (f.id !== 'shot' || !choice.view);
+    (f.id !== 'him' || together);
 
   return (
     <BottomSheet title={like ? 'Change this photo' : 'Direct a photo'} error={error} onClose={onClose}>
