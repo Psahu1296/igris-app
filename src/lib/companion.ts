@@ -30,6 +30,12 @@ export type CompanionPhoto = {
   /** How long it took her to get this photo to him: writing its prompt (artist.py) plus
    * mflux drawing it. Missing on a maestro from before 2026-10-01. */
   seconds?: number;
+  /** The drawing's seed: drawn again with it, the same photo comes back (the director's "change one thing"). */
+  seed?: number;
+  /** What the Mac's own check found wrong in it (fault ids, see Director.faults). */
+  faults?: string[];
+  /** His choices, when he directed it (directPhoto). */
+  direction?: Direction;
 };
 
 export type CompanionMessage = {
@@ -509,4 +515,83 @@ export async function streamCompanion(opts: {
     }
   }
   throw new Error('The stream ended before she finished.');
+}
+
+/**
+ * The photo director (maestro companion/director.py): he picks each part of a photo — who
+ * is in it, whose eyes, the camera, how far, the place, the clothes and their colour, her
+ * body, her face, the light — and the Mac draws exactly that, with no planning guess. The
+ * fields and their chips come from the Mac; nothing about her is in this app.
+ */
+export type DirectorField = {
+  id: string;
+  label: string;
+  /** pick: one of `choices` only; text: free words, `choices` are suggestions. */
+  kind: 'pick' | 'text';
+  hint: string;
+  choices: { value: string; label: string }[];
+};
+/** Field id → his value. Empty fields are filled on the Mac from her state. */
+export type Direction = Record<string, string>;
+export type Director = {
+  fields: DirectorField[];
+  /** What he pinned: it holds for every directed photo until cleared. */
+  pins: Direction;
+  /** What each empty field is right now. */
+  defaults: Direction;
+  /** Fault chips for correcting a photo. */
+  faults: { id: string; label: string }[];
+};
+
+/** Director mode: the camera button opens the director instead of taking a photo of the moment.
+ * Kept for the app's run, like liveMode. */
+let directorOn = false;
+export const directorMode = { get: () => directorOn, set: (on: boolean) => void (directorOn = on) };
+
+const refused = async (res: Response, old: string) => {
+  if (res.status === 404) return old;
+  const detail = ((await res.json().catch(() => ({}))) as { detail?: unknown }).detail;
+  return typeof detail === 'string' ? detail : `The Mac refused (${res.status}).`;
+};
+
+export async function fetchDirector(lane: Lane): Promise<Director> {
+  const res = await authedFetch(lane, whoPath('/companion/director'));
+  if (!res.ok) throw new Error(await refused(res, "This Mac's maestro is too old for the director."));
+  return (await res.json()) as Director;
+}
+
+export type DirectRequest = {
+  direction: Direction;
+  /** One of her photos: drawn with its seed, so only what he changed changes. */
+  like?: string;
+  /** Keep these choices for the next directed photos. */
+  pin?: boolean;
+  count?: number;
+};
+
+/** The prompt his choices make, and what the Mac changed of them (a camera that cannot fit). */
+export async function previewDirection(lane: Lane, req: DirectRequest): Promise<{ prompt: string; notes: string[] }> {
+  const res = await post(lane, whoPath('/companion/director/preview'), req);
+  if (!res.ok) throw new Error(await refused(res, 'That photo is gone.'));
+  return (await res.json()) as { prompt: string; notes: string[] };
+}
+
+/** His photo, queued on the Mac: it arrives like her other queued photos (`photos` in fetchCompanion). */
+export async function directPhoto(lane: Lane, req: DirectRequest): Promise<void> {
+  const res = await post(lane, whoPath('/companion/direct'), req);
+  if (!res.ok) throw new Error(await refused(res, 'That photo is gone.'));
+  await res.text(); // a short stream: queued, done
+}
+
+export async function clearDirection(lane: Lane): Promise<void> {
+  const res = await authedFetch(lane, whoPath('/companion/director'), { method: 'DELETE' });
+  if (!res.ok) throw new Error(await refused(res, "This Mac's maestro is too old for the director."));
+}
+
+/** What came out wrong in one of her photos: a lesson for the next ones, and with
+ * `retake` the same photo again, fixes first. */
+export async function correctPhoto(lane: Lane, name: string, wrong: string[], retake: boolean): Promise<void> {
+  const res = await post(lane, whoPath('/companion/correct'), { name, wrong, retake });
+  if (!res.ok) throw new Error(await refused(res, "That photo is gone, or this Mac's maestro is too old."));
+  await res.text();
 }

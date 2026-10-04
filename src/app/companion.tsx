@@ -1,13 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, Radio, Smile, Square, Trash2, UserRound, Volume2, VolumeX } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clapperboard, Clock, Eye, Heart, Mic, Radio, SlidersHorizontal, Smile, Square, Trash2, UserRound, Volume2, VolumeX, Wrench } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { DiarySheet } from '@/components/companion/diary-sheet';
+import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
 import { CompanionTray } from '@/components/companion/tray';
@@ -25,6 +26,7 @@ import {
   forgetCompanion,
   lastCompanion,
   deleteMessage,
+  directorMode,
   likeMessage,
   liveMode,
   markSeen,
@@ -102,6 +104,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [messages, setMessages] = useState<CompanionMessage[]>(view?.messages ?? []);
   // Live mode: a photo with every reply. Kept for the app's run, off at every start.
   const [liveOn, setLiveOn] = useState(liveMode.get);
+  // Director mode: the camera button opens the photo director; her photos get Change and Fix.
+  const [directing, setDirecting] = useState(directorMode.get);
   // Her voice: every reply said aloud when on; `speaking` is the message being said now.
   const [aloud, setAloud] = useState(voiceMode.get);
   const [speaking, setSpeaking] = useState<string | null>(null);
@@ -142,6 +146,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     (seen?.companions ?? []).filter((c) => c.id !== seen?.id)
   );
   const [sheet, setSheet] = useState<'memory' | 'diary' | null>(null);
+  // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
+  const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
+  const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
   // The mic: what he says lands in the message box, to be read before it is sent.
   const listening = useListening(lane, true);
   // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
@@ -445,6 +452,25 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     );
   };
 
+  const toggleDirector = () => {
+    const on = !directing;
+    directorMode.set(on);
+    setDirecting(on);
+    void Haptics.selectionAsync();
+    ToastAndroid.show(
+      on ? 'Director: the camera button lets you pick the photo. Her photos get Change and Fix.' : 'Director is off.',
+      ToastAndroid.SHORT
+    );
+  };
+
+  /** A directed photo or a retake was queued on the Mac: show it coming. */
+  const queued = (message: string) => {
+    setDirected(null);
+    setFixing(null);
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+    void sync({});
+  };
+
   const makeFace = (photo: CompanionPhoto) =>
     Alert.alert(`Make this ${name}'s face?`, 'Every photo she sends from now on is drawn from this one.', [
       { text: 'Cancel', style: 'cancel' },
@@ -514,6 +540,17 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               <Text style={[styles.liveChipText, liveOn ? styles.liveChipTextOn : null]}>Live</Text>
             </PressableScale>
           ) : null}
+          {name !== null && lane === 'local' ? (
+            <PressableScale
+              onPress={toggleDirector}
+              hitSlop={8}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: directing }}
+              accessibilityLabel="Director: pick each part of her photos"
+              style={[styles.liveChip, directing ? styles.liveChipOn : null]}>
+              <Clapperboard size={13} color={directing ? Palette.ground : Palette.muted} />
+            </PressableScale>
+          ) : null}
           {name !== null && lane === 'local' && canSpeak() ? (
             <PressableScale
               onPress={() => {
@@ -578,6 +615,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                   isFace={!!m.image && m.image.name === face}
                   onMakeFace={makeFace}
                   onView={(photo, view) => void send({ view: { name: photo.name, view } })}
+                  onChange={directing ? (photo) => setDirected({ like: photo }) : undefined}
+                  onFix={directing ? setFixing : undefined}
                   opened={!!m.image && opened.includes(m.image.name)}
                   onOpenOnce={openOnce}
                   liked={liked.includes(m.at)}
@@ -650,15 +689,33 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {directed ? (
+          <DirectorSheet
+            lane={lane}
+            accent={ROSE}
+            like={directed.like}
+            onClose={() => setDirected(null)}
+            onSent={() => queued(`${name ?? 'She'} is taking it…`)}
+          />
+        ) : null}
+        {fixing ? (
+          <FixSheet
+            lane={lane}
+            accent={ROSE}
+            photo={fixing}
+            onClose={() => setFixing(null)}
+            onSent={(retook) => (retook ? queued('Retaking it with the fixes…') : queued('Noted for the next photos.'))}
+          />
+        ) : null}
         <View style={styles.composer}>
           <PressableScale
-            onPress={() => void send({ snap: true })}
-            disabled={busy || name === null || lane !== 'local'}
+            onPress={() => (directing ? setDirected({ like: null }) : void send({ snap: true }))}
+            disabled={(busy && !directing) || name === null || lane !== 'local'}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`Ask ${name ?? 'her'} for a photo of this moment`}
-            style={[styles.snap, { opacity: busy || name === null ? 0.4 : 1 }]}>
-            <Camera size={18} color={ROSE} />
+            accessibilityLabel={directing ? 'Direct a photo' : `Ask ${name ?? 'her'} for a photo of this moment`}
+            style={[styles.snap, directing ? styles.snapOn : null, { opacity: (busy && !directing) || name === null ? 0.4 : 1 }]}>
+            {directing ? <SlidersHorizontal size={18} color={ROSE} /> : <Camera size={18} color={ROSE} />}
           </PressableScale>
           <PressableScale
             onPress={() => setEmoting((on) => !on)}
@@ -714,6 +771,8 @@ function Bubble({
   isFace = false,
   onMakeFace,
   onView,
+  onChange,
+  onFix,
   opened = false,
   onOpenOnce,
   liked = false,
@@ -731,6 +790,10 @@ function Bubble({
   onMakeFace?: (photo: CompanionPhoto) => void;
   /** Her photo again, from his eyes or hers (a new photo, about two and a half minutes). */
   onView?: (photo: CompanionPhoto, view: PhotoView['view']) => void;
+  /** Director mode: the director, starting from this photo's choices and seed (directed photos only). */
+  onChange?: (photo: CompanionPhoto) => void;
+  /** Director mode: mark what came out wrong, and retake. */
+  onFix?: (photo: CompanionPhoto) => void;
   /** An open-once photo he has already opened. */
   opened?: boolean;
   onOpenOnce?: (photo: CompanionPhoto) => void;
@@ -796,6 +859,28 @@ function Bubble({
                   <Meta style={styles.faceBadgeText}>{v === 'his' ? 'Your view' : 'Her view'}</Meta>
                 </PressableScale>
               ))}
+              {onChange && image.direction ? (
+                <PressableScale
+                  onPress={() => onChange(image)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change one thing in this photo"
+                  style={styles.viewBadge}>
+                  <SlidersHorizontal size={11} color={Palette.text} />
+                  <Meta style={styles.faceBadgeText}>Change</Meta>
+                </PressableScale>
+              ) : null}
+              {onFix ? (
+                <PressableScale
+                  onPress={() => onFix(image)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Say what is wrong in this photo"
+                  style={[styles.viewBadge, image.faults?.length ? styles.faultBadge : null]}>
+                  <Wrench size={11} color={Palette.text} />
+                  <Meta style={styles.faceBadgeText}>{image.faults?.length ? `Fix · ${image.faults.length}` : 'Fix'}</Meta>
+                </PressableScale>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -978,7 +1063,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(9, 8, 14, 0.7)',
   },
   faceBadgeText: { color: Palette.text },
-  viewRow: { position: 'absolute', left: Space.sm, bottom: Space.sm, flexDirection: 'row', gap: Space.xs + 2 },
+  viewRow: {
+    position: 'absolute',
+    left: Space.sm,
+    right: Space.sm,
+    bottom: Space.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Space.xs + 2,
+  },
+  faultBadge: { backgroundColor: 'rgba(190, 40, 60, 0.85)' },
   viewBadge: {
     flexDirection: 'row',
     alignItems: 'center',
