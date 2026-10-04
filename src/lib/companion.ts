@@ -129,6 +129,24 @@ export type Companion = {
   seen?: string[];
   /** Every companion on the Mac. Missing on a maestro from before 2026-10-03 (one companion only). */
   companions?: CompanionListing[];
+  /** Her photos still on their way (maestro companion/darkroom.py); null when none. Missing on an older maestro. */
+  photos?: CompanionPhotosComing | null;
+};
+
+/** Photos queued on the Mac: drawn one by one while the chat goes on. */
+export type CompanionPhotosComing = {
+  /** How many wait behind the one being made. */
+  queued: number;
+  /** The one being made now: its place in what was asked for, and the draw's steps. */
+  drawing: { index: number; of: number; done: number; total: number } | null;
+};
+
+/** The line the chat shows while photos are on their way. */
+export const comingLine = (p: CompanionPhotosComing): string => {
+  const d = p.drawing;
+  if (!d) return p.queued === 1 ? 'A photo is on its way…' : `${p.queued} photos on their way…`;
+  const which = d.of > 1 ? `Photo ${d.index} of ${d.of}` : 'Taking a photo';
+  return d.total ? `${which} · ${d.done} of ${d.total}` : `${which} · getting it ready…`;
 };
 
 /**

@@ -39,6 +39,8 @@ import {
   withoutTag,
   type CompanionDial,
   type CompanionListing,
+  type CompanionPhotosComing,
+  comingLine,
   type CompanionMessage,
   type CompanionOutfit,
   type CompanionPhoto,
@@ -144,6 +146,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const listening = useListening(lane, true);
   // A photo being taken after her words: null = none, else mflux's steps so far (0 of 0 = loading).
   const [snapping, setSnapping] = useState<{ done: number; total: number } | null>(view?.snapping ?? null);
+  // Photos made in the background while the chat goes on (never blocks sending).
+  const [coming, setComing] = useState<CompanionPhotosComing | null>(null);
   const lastSend = useRef(0);
   const scroller = useRef<ScrollView>(null);
   const bottomInset = useKeyboardInset();
@@ -185,9 +189,12 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setMessages(view.messages);
         setLive(view.live);
         setSnapping(view.snapping);
+        setComing(c.photos ?? null);
         if (c.pending) {
           setSendError(null);
           again({});
+        } else if (c.photos) {
+          again({}); // look again soon: each photo lands on its own
         } else if (opts.lost !== undefined) {
           const lost = opts.lost;
           if (c.messages.slice(-2).some((m) => m.role === 'you' && m.text === lost)) setSendError(null);
@@ -598,7 +605,21 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                   <View style={[styles.fillBar, { width: `${drawingShare(snapping) * 100}%` }]} />
                 </View>
               </View>
-            ) : live !== null ? (
+            ) : null}
+            {coming && !snapping ? (
+              <View style={[styles.bubble, styles.hers, styles.snapping]}>
+                <View style={styles.snapRow}>
+                  <Camera size={14} color={ROSE} />
+                  <Meta style={styles.snapText}>{comingLine(coming)}</Meta>
+                </View>
+                {coming.drawing ? (
+                  <View style={styles.track}>
+                    <View style={[styles.fillBar, { width: `${drawingShare(coming.drawing) * 100}%` }]} />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            {snapping ? null : live !== null ? (
               withoutTag(live) ? (
                 bubbles(withoutTag(live)).map((part, j) => <Bubble key={j} lane={lane} mine={false} text={part} />)
               ) : (
