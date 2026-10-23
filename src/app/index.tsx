@@ -230,6 +230,7 @@ export default function Transcript() {
         onOpenVoice={() => router.push('/voice')}
         onOpenChats={() => setBrowsing(true)}
         onOpenTodos={() => router.push('/todos')}
+        onOpenPrep={() => router.push('/prep')}
         onOpenFavourites={() => router.push('/favourites')}
         onOpenHelplines={() => router.push('/helplines')}
         onOpenUpdates={() => router.push('/updates')}

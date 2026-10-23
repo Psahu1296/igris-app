@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import {
   ChevronRight,
   Cloud,
+  GraduationCap,
   Heart,
   LifeBuoy,
   RefreshCw,
@@ -36,6 +37,7 @@ interface SideDrawerProps {
   onOpenVoice: () => void;
   onOpenChats: () => void;
   onOpenTodos: () => void;
+  onOpenPrep: () => void;
   onOpenFavourites: () => void;
   onOpenHelplines: () => void;
   onOpenUpdates: () => void;
@@ -56,6 +58,7 @@ export function SideDrawer({
   onOpenVoice,
   onOpenChats,
   onOpenTodos,
+  onOpenPrep,
   onOpenFavourites,
   onOpenHelplines,
   onOpenUpdates,
@@ -199,6 +202,21 @@ export function SideDrawer({
                   <View style={styles.navTextGroup}>
                     <Answer style={styles.navLabel}>Todos & Routines</Answer>
                     <Meta style={styles.navHint}>Scheduled tasks, alarms & tutor</Meta>
+                  </View>
+                  <ChevronRight size={16} color={Palette.faint} />
+                </PressableScale>
+
+                {/* Interview prep */}
+                <PressableScale
+                  onPress={() => handleAction(onOpenPrep)}
+                  accessibilityRole="button"
+                  style={styles.navRow}>
+                  <View style={[styles.navIconBox, { backgroundColor: accent + '1A' }]}>
+                    <GraduationCap size={18} color={accent} />
+                  </View>
+                  <View style={styles.navTextGroup}>
+                    <Answer style={styles.navLabel}>Interview Prep</Answer>
+                    <Meta style={styles.navHint}>Today&apos;s plan, quiz & readiness</Meta>
                   </View>
                   <ChevronRight size={16} color={Palette.faint} />
                 </PressableScale>
