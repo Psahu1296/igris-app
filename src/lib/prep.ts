@@ -46,6 +46,51 @@ export type PrepReport = {
   weakest: { id: number; section: string; question: string; score: number }[];
 };
 
+/** Streak, XP and rank — maestro prep/habit.py, recomputed from every answer. */
+export type Habit = {
+  streak: number;
+  best: number;
+  freezes: number;
+  done_today: boolean;
+  today_xp: number;
+  goal: number;
+  total_xp: number;
+  level: number;
+  rank: string;
+  next: string | null;
+  progress: number;
+  to_next: number;
+  week: { day: string; xp: number; frozen: boolean }[];
+};
+
+/** A read-code card as shown: no answer. `i` is the option's id to send back. */
+export type PyCard = {
+  id: string;
+  kata: number;
+  kind: 'output' | 'blank' | 'bug';
+  ask: string;
+  code: string;
+  options: { i: number; text: string }[];
+};
+
+export type PyNext = {
+  card: PyCard | null;
+  unlocked: number;
+  mastery: { total: number; seen: number; solid: number };
+};
+
+export type PyResult = {
+  right: boolean;
+  answer: string;
+  why: string;
+  fixed: string | null;
+  xp: number;
+  habit: Habit;
+  goal_hit: boolean;
+  streak_up: boolean;
+  rank_up: boolean;
+};
+
 export class PrepUnavailable extends Error {}
 
 async function json<T>(res: Response, what: string): Promise<T> {
@@ -87,6 +132,19 @@ export async function answerQuestion(lane: Lane, id: number, answer: string): Pr
 export async function skipQuestion(lane: Lane, id: number): Promise<string> {
   await json(await authedFetch(lane, `/prep/questions/${id}/grade`, post({ score: 1, note: 'skipped' })), 'Skipping');
   return (await json<{ answer: string }>(await authedFetch(lane, `/prep/questions/${id}`), 'Loading the answer')).answer;
+}
+
+export async function prepHabit(lane: Lane): Promise<Habit> {
+  return json(await authedFetch(lane, '/prep/habit'), 'Loading your streak');
+}
+
+export async function nextCard(lane: Lane, ahead: boolean, after: string | null): Promise<PyNext> {
+  const q = `?ahead=${ahead}${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+  return json(await authedFetch(lane, `/prep/python/next${q}`), 'Loading a card');
+}
+
+export async function answerCard(lane: Lane, id: string, choice: number): Promise<PyResult> {
+  return json(await authedFetch(lane, `/prep/python/${encodeURIComponent(id)}/answer`, post({ choice })), 'Checking');
 }
 
 export async function prepReport(lane: Lane): Promise<PrepReport> {

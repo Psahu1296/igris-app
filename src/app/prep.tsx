@@ -10,14 +10,17 @@ import {
   Play,
   Square,
   Star,
+  Terminal,
   X,
 } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HabitBar } from '@/components/habit-bar';
 import { Markdown } from '@/components/markdown';
 import { PressableScale } from '@/components/pressable-scale';
+import { PythonPractice } from '@/components/python-practice';
 import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space } from '@/constants/theme';
 import {
@@ -25,11 +28,13 @@ import {
   dayLabel,
   nextQuestions,
   prepDay,
+  prepHabit,
   prepReport,
   PrepUnavailable,
   shiftDay,
   skipQuestion,
   tickTask,
+  type Habit,
   type PrepDay,
   type PrepGrade,
   type PrepQuestion,
@@ -70,13 +75,16 @@ export default function Prep() {
   const [unavailable, setUnavailable] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [habit, setHabit] = useState<Habit | null>(null);
+  const [python, setPython] = useState(false);
 
   const load = useCallback(
     async (on: string | null = day) => {
       try {
-        const [p, r] = await Promise.all([prepDay(lane, on ?? undefined), prepReport(lane)]);
+        const [p, r, h] = await Promise.all([prepDay(lane, on ?? undefined), prepReport(lane), prepHabit(lane)]);
         setPlan(p);
         setReport(r);
+        setHabit(h);
         setError(null);
       } catch (err) {
         if (err instanceof PrepUnavailable) setUnavailable(true);
@@ -137,6 +145,21 @@ export default function Prep() {
     await load();
   };
 
+  if (python) {
+    return (
+      <PythonPractice
+        lane={lane}
+        accent={accent}
+        habit={habit}
+        onClose={(h) => {
+          setPython(false);
+          if (h) setHabit(h);
+          void load();
+        }}
+      />
+    );
+  }
+
   if (quiz) {
     return (
       <QuizView
@@ -177,9 +200,24 @@ export default function Prep() {
           <ActivityIndicator color={accent} />
         ) : (
           <>
+            {habit ? <HabitBar habit={habit} accent={accent} /> : null}
+
+            <PressableScale
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setPython(true);
+              }}
+              accessibilityRole="button"
+              style={[styles.pyButton, { backgroundColor: accent }]}>
+              <Terminal size={18} color={Palette.ground} />
+              <Text style={styles.pyText}>
+                {habit && !habit.done_today ? 'Python practice · keep the streak' : 'Python practice'}
+              </Text>
+            </PressableScale>
+
             <View style={styles.readiness}>
               <View style={styles.rowBetween}>
-                <Meta style={styles.sectionTitle}>READINESS</Meta>
+                <Meta style={styles.sectionTitle}>INTERVIEW READINESS</Meta>
                 <Meta style={styles.when}>
                   {report ? `${report.seen} of ${report.total} seen · ${report.due} due` : ''}
                 </Meta>
@@ -563,6 +601,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   quickText: { fontFamily: Font.uiMedium, fontSize: 14 },
+  pyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Space.sm,
+    height: 52,
+    borderRadius: 14,
+  },
+  pyText: { fontFamily: Font.uiMedium, color: Palette.ground, fontSize: 15 },
   topic: { gap: 6, paddingVertical: Space.xs },
   topicTitle: { flex: 1, fontFamily: Font.ui, color: Palette.text, fontSize: 14 },
   qHead: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
