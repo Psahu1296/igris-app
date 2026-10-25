@@ -296,8 +296,13 @@ export async function setFace(lane: Lane, name: string): Promise<void> {
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
-export async function forgetCompanion(lane: Lane): Promise<void> {
-  const res = await authedFetch(lane, whoPath('/companion'), { method: 'DELETE' });
+/**
+ * `who` is fixed when the confirm dialog opens: read at tap time it was whoever the screen
+ * had switched to by then, and a "Clear Kavya?" dialog wiped Seema (2026-10-25).
+ */
+export async function forgetCompanion(lane: Lane, who: string): Promise<void> {
+  const path = who ? `/companion?who=${encodeURIComponent(who)}` : '/companion';
+  const res = await authedFetch(lane, path, { method: 'DELETE' });
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 

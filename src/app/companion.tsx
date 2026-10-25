@@ -486,18 +486,20 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
       },
     ]);
 
-  const forget = () =>
+  const forget = () => {
+    const who = companionWho.get();
     Alert.alert(`Clear everything with ${name}?`, 'The whole chat is deleted from the Mac. She will not remember it.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
         style: 'destructive',
         onPress: () =>
-          void forgetCompanion(lane)
+          void forgetCompanion(lane, who)
             .then(() => setMessages([]))
             .catch((e: unknown) => setSendError(e instanceof Error ? e.message : String(e))),
       },
     ]);
+  };
 
   const busy = live !== null || snapping !== null;
 
