@@ -97,6 +97,7 @@ function RootNavigator() {
         <Stack.Screen name="todos" />
         <Stack.Screen name="todo" />
         <Stack.Screen name="prep" />
+        <Stack.Screen name="renovate" />
         <Stack.Screen name="companion" />
       </Stack.Protected>
 

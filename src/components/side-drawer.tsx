@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Cloud,
   GraduationCap,
+  Hammer,
   Heart,
   LifeBuoy,
   RefreshCw,
@@ -38,6 +39,7 @@ interface SideDrawerProps {
   onOpenChats: () => void;
   onOpenTodos: () => void;
   onOpenPrep: () => void;
+  onOpenRenovate: () => void;
   onOpenFavourites: () => void;
   onOpenHelplines: () => void;
   onOpenUpdates: () => void;
@@ -59,6 +61,7 @@ export function SideDrawer({
   onOpenChats,
   onOpenTodos,
   onOpenPrep,
+  onOpenRenovate,
   onOpenFavourites,
   onOpenHelplines,
   onOpenUpdates,
@@ -217,6 +220,21 @@ export function SideDrawer({
                   <View style={styles.navTextGroup}>
                     <Answer style={styles.navLabel}>Interview Prep</Answer>
                     <Meta style={styles.navHint}>Today&apos;s plan, quiz & readiness</Meta>
+                  </View>
+                  <ChevronRight size={16} color={Palette.faint} />
+                </PressableScale>
+
+                {/* Renovation planner */}
+                <PressableScale
+                  onPress={() => handleAction(onOpenRenovate)}
+                  accessibilityRole="button"
+                  style={styles.navRow}>
+                  <View style={[styles.navIconBox, { backgroundColor: accent + '1A' }]}>
+                    <Hammer size={18} color={accent} />
+                  </View>
+                  <View style={styles.navTextGroup}>
+                    <Answer style={styles.navLabel}>Renovation</Answer>
+                    <Meta style={styles.navHint}>Sketch + photos → a costed plan</Meta>
                   </View>
                   <ChevronRight size={16} color={Palette.faint} />
                 </PressableScale>
