@@ -12,12 +12,13 @@ import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
 import { CompanionTray } from '@/components/companion/tray';
-import { PhotoViewer } from '@/components/photo-viewer';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
+  ROSE,
+  ROSE_SOFT,
   bubbles,
   companionWho,
   CompanionRefused,
@@ -49,7 +50,7 @@ import {
   type PhotoView,
   type CompanionScene,
 } from '@/lib/companion';
-import { canSpeak, hush, releaseSeemaVoice, say, voiceMode } from '@/lib/companion-voice';
+import { canSpeak, hush, releaseCompanionVoice, say, voiceMode } from '@/lib/companion-voice';
 import { drawingShare } from '@/lib/drawing-steps';
 import { drawnSource, type Lane, type Photo } from '@/lib/maestro';
 import { pickPhoto } from '@/lib/photo';
@@ -122,7 +123,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   useEffect(
     () => () => {
       hush();
-      void releaseSeemaVoice();
+      void releaseCompanionVoice();
     },
     []
   );
@@ -953,7 +954,7 @@ function Bubble({
   );
 }
 
-/** Her base face in the header, once there is one; a heart before her first photo. */
+/** Her base face in the header, once there is one; a heart before her first photo. Opens her page. */
 function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
   const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
   useEffect(() => {
@@ -966,26 +967,20 @@ function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
       live = false;
     };
   }, [lane, face]);
-  const [open, setOpen] = useState(false);
-  if (!face || !source) {
-    return (
-      <View style={styles.avatar}>
-        <Heart size={16} color={ROSE} fill={ROSE} />
-      </View>
-    );
-  }
+  // Her page (companion-profile.tsx): the full-screen photo moved there, on her big face.
   return (
-    <>
-      <PressableScale
-        onPress={() => setOpen(true)}
-        hitSlop={6}
-        accessibilityRole="imagebutton"
-        accessibilityLabel="Her photo, full screen"
-        style={styles.avatar}>
+    <PressableScale
+      onPress={() => router.push('/companion-profile')}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel="Her page"
+      style={styles.avatar}>
+      {face && source ? (
         <Image source={source} style={styles.avatarImage} contentFit="cover" />
-      </PressableScale>
-      <PhotoViewer source={open ? source : null} onClose={() => setOpen(false)} />
-    </>
+      ) : (
+        <Heart size={16} color={ROSE} fill={ROSE} />
+      )}
+    </PressableScale>
   );
 }
 
@@ -998,8 +993,6 @@ function Centered({ text }: { text: string }) {
 }
 
 /** Her colour. Only this screen uses it: it is her room, not an Igris state. */
-const ROSE = '#FB7185';
-const ROSE_SOFT = 'rgba(251, 113, 133, 0.14)';
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Palette.ground },

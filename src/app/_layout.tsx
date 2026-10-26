@@ -99,6 +99,7 @@ function RootNavigator() {
         <Stack.Screen name="prep" />
         <Stack.Screen name="renovate" />
         <Stack.Screen name="companion" />
+        <Stack.Screen name="companion-profile" />
       </Stack.Protected>
 
       <Stack.Protected guard={status !== 'signed-in'}>

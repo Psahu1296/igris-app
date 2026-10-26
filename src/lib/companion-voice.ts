@@ -24,10 +24,10 @@ export const canSpeak = hasWomanVoice;
 // The asset spec for her voice, fetched once (manifest.ts's own cache would refetch on
 // every call otherwise). null until the fetch resolves or fails; then never re-fetched —
 // same lifetime as the module, same pattern as `liveMode` in lib/companion.ts.
-let seema: AssetSpec | null = null;
+let herVoice: AssetSpec | null = null;
 void fetchManifest()
   .then((manifest) => {
-    seema = manifest.assets.find((a) => a.id === 'voice-seema') ?? null;
+    herVoice = manifest.assets.find((a) => a.id === 'voice-companion') ?? null;
   })
   .catch(() => {
     // The chat works fine without her neural voice; the flat fallback still speaks.
@@ -62,9 +62,9 @@ let warnedFallback = false;
 export async function say(text: string): Promise<void> {
   const words = spoken(text);
   if (!words) return;
-  if (seema && modelState(seema) === 'ready') {
+  if (herVoice && modelState(herVoice) === 'ready') {
     try {
-      const tts = await getVoice(seema);
+      const tts = await getVoice(herVoice);
       await tts.speak(words);
       return;
     } catch {
@@ -81,13 +81,13 @@ export async function say(text: string): Promise<void> {
 /** Stops whichever voice is speaking, without waiting for it. */
 export function hush(): void {
   stopHindiWoman();
-  if (seema) stopVoice(seema);
+  if (herVoice) stopVoice(herVoice);
 }
 
 /** Frees her voice's ~79MB of native memory. Call when leaving the companion screen;
  * `say` reloads it the next time she speaks. */
-export async function releaseSeemaVoice(): Promise<void> {
-  await releaseVoice(seema);
+export async function releaseCompanionVoice(): Promise<void> {
+  await releaseVoice(herVoice);
 }
 
 // Whether every reply is said as it arrives. Off on every app start: she should not start

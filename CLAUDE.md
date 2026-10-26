@@ -458,6 +458,12 @@ released with no underruns. Download to speech took under 20s on 5G.
   fetches the page with the token into a WebView; Share PDF prints that HTML on the phone
   (`expo-print` → `expo-sharing`, native: runtime 1.3.0). expo-sharing's config plugin is left
   out of app.json on purpose: it only sets up RECEIVING shares; sending needs no prebuild.
+- **The companion's page** (`src/app/companion-profile.tsx`, 2026-10-26): opened from her
+  header photo (her name still switches companion). Every word on it comes from maestro
+  `GET /companion/profile` as cards of four kinds (meter, stat, ring, text): this repo is
+  public and only knows the kinds. Diary and memory reuse the chat's sheets; the photo grid
+  pages `GET /companion/photos`, long-press hearts or deletes (the chat's own routes), and
+  "Training set" asks the Mac to copy hearted photos for a later retrain. JS only: an OTA.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

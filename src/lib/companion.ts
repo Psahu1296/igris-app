@@ -262,6 +262,10 @@ export const withEmote = (draft: string, emote: string) => `${draft}${draft && !
 /** Her photos are portrait, like a phone's (photos.SIZE, 768 × 960). */
 export const PHOTO_ASPECT = 768 / 960;
 
+/** Her colour. Only her screens use it: it is her room, not an Igris state. */
+export const ROSE = '#FB7185';
+export const ROSE_SOFT = 'rgba(251, 113, 133, 0.14)';
+
 // The last snapshot the Mac gave, kept while the app is open: the screen opens on it at
 // once and refreshes behind it, where it used to show a loader on every visit. Memory
 // only, on purpose: her chat is never written to the phone's storage.
@@ -298,7 +302,7 @@ export async function setFace(lane: Lane, name: string): Promise<void> {
 
 /**
  * `who` is fixed when the confirm dialog opens: read at tap time it was whoever the screen
- * had switched to by then, and a "Clear Kavya?" dialog wiped Seema (2026-10-25).
+ * had switched to by then, and a "Clear" dialog for one companion wiped the other (2026-10-25).
  */
 export async function forgetCompanion(lane: Lane, who: string): Promise<void> {
   const path = who ? `/companion?who=${encodeURIComponent(who)}` : '/companion';
@@ -599,4 +603,51 @@ export async function correctPhoto(lane: Lane, name: string, wrong: string[], re
   const res = await post(lane, whoPath('/companion/correct'), { name, wrong, retake });
   if (!res.ok) throw new Error(await refused(res, "That photo is gone, or this Mac's maestro is too old."));
   await res.text();
+}
+
+/**
+ * Her page (maestro companion/page.py). The Mac writes every word on it: the app only draws
+ * the kinds of card, so nothing of hers is in this public repo.
+ */
+type CardLook = { icon?: string; section?: string };
+
+export type ProfileCard = CardLook &
+  (
+    | { kind: 'meter'; title: string; value: number; caption?: string }
+    | { kind: 'stat'; title: string; value: string; caption?: string }
+    | { kind: 'ring'; title: string; value: number; max: number; caption?: string }
+    | { kind: 'text'; title: string; value: string }
+  );
+
+export type CompanionProfile = {
+  name: string;
+  age: number;
+  face: string | null;
+  now: string;
+  cards: ProfileCard[];
+  links: { id: 'diary' | 'memory'; title: string; icon?: string }[];
+};
+
+export type ProfilePhoto = { name: string; at: string; liked: boolean; faults?: string[] };
+
+export async function fetchProfile(lane: Lane): Promise<CompanionProfile> {
+  const res = await authedFetch(lane, whoPath('/companion/profile'));
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her page." : `The Mac refused (${res.status}).`);
+  return (await res.json()) as CompanionProfile;
+}
+
+/** Her photos, newest first, a page at a time: `before` is the last one's `at`. */
+export async function fetchPhotos(lane: Lane, before = ''): Promise<{ photos: ProfilePhoto[]; more: boolean }> {
+  const query = before ? `&before=${encodeURIComponent(before)}` : '';
+  const path = whoPath('/companion/photos');
+  const res = await authedFetch(lane, `${path}${path.includes('?') ? '&' : '?'}limit=30${query}`);
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return (await res.json()) as { photos: ProfilePhoto[]; more: boolean };
+}
+
+/** Copy his hearted photos, captioned, next to her face model on the Mac, for a later retrain. */
+export async function makeTrainingSet(lane: Lane): Promise<number> {
+  const res = await post(lane, whoPath('/companion/training'), {});
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return ((await res.json()) as { copied: number }).copied;
 }
