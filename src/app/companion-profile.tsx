@@ -95,6 +95,8 @@ export default function CompanionProfileScreen() {
   const [sheet, setSheet] = useState<'diary' | 'memory' | null>(null);
   const [open, setOpen] = useState<Source | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<ProfilePhoto | null>(null);
+  // All of her photos (the Mac's count), not the pages loaded so far.
+  const [total, setTotal] = useState<number | null>(null);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -106,6 +108,7 @@ export default function CompanionProfileScreen() {
         setProfile(p);
         setPhotos(page.photos);
         setMore(page.more);
+        setTotal(page.total ?? null);
       })
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -151,6 +154,7 @@ export default function CompanionProfileScreen() {
           deleteMessage(lane, photo.at)
             .then(() => {
               setPhotos((now) => now.filter((p) => p.at !== photo.at));
+              setTotal((n) => (n === null ? n : Math.max(0, n - 1)));
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             })
             .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT)),
@@ -200,7 +204,12 @@ export default function CompanionProfileScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          <View style={styles.presenceDot} />
+          {/* Her real presence (maestro presence.py): grey while she is busy, rose when she is here. */}
+          <View
+            style={[styles.presenceDot, profile?.away ? styles.presenceAway : null]}
+            accessible
+            accessibilityLabel={profile?.away ? `Busy: ${profile.away.reason}` : 'Here'}
+          />
         </View>
       </View>
 
@@ -245,7 +254,7 @@ export default function CompanionProfileScreen() {
             <View style={styles.top}>
               <Hero lane={lane} profile={profile} mood={mood} onOpen={setOpen} />
 
-              {/* Intimate Artifacts: Her Diary and Her Memories */}
+              {/* Diary and memory links */}
               {profile.links.length > 0 ? (
                 <View style={styles.links}>
                   {profile.links.map((link) => {
@@ -283,9 +292,9 @@ export default function CompanionProfileScreen() {
                 <View style={styles.photosTitleRow}>
                   <Images size={15} color={ROSE} />
                   <Text style={styles.sectionHeaderTitle}>PHOTOS</Text>
-                  {photos.length > 0 ? (
+                  {(total ?? photos.length) > 0 ? (
                     <View style={styles.photoCountPill}>
-                      <Text style={styles.photoCountText}>{photos.length}</Text>
+                      <Text style={styles.photoCountText}>{total ?? photos.length}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -350,7 +359,7 @@ export default function CompanionProfileScreen() {
         }}
       />
 
-      {/* Intimate Diary & Memory Sheets */}
+      {/* Diary & memory sheets */}
       {sheet === 'diary' && profile ? <DiarySheet lane={lane} name={profile.name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
       {sheet === 'memory' && profile ? <MemorySheet lane={lane} name={profile.name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
     </SafeAreaView>
@@ -701,7 +710,7 @@ function PhotoActionModal({
                 {photo.liked ? 'Hearted Photo' : 'Captured Moment'}
               </Text>
               <Text style={styles.modalHeaderSubtitle}>
-                {photo.liked ? 'Included in training set' : 'Personal photo'}
+                {photo.liked ? 'Hearted · in the next training set' : 'Personal photo'}
               </Text>
             </View>
           </View>
@@ -803,6 +812,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: ROSE,
   },
+  presenceAway: { backgroundColor: Palette.faint },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Gutter, gap: Space.md },
   errorCard: {
@@ -914,7 +924,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
-  /* Intimate Artifact Links */
+  /* Diary and memory links */
   links: {
     flexDirection: 'row',
     gap: Space.sm,

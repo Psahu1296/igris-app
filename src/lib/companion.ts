@@ -626,6 +626,8 @@ export type CompanionProfile = {
   now: string;
   cards: ProfileCard[];
   links: { id: 'diary' | 'memory'; title: string; icon?: string }[];
+  /** Busy right now and back at `until`; null when she is here. Absent on an older maestro. */
+  away?: CompanionAway | null;
 };
 
 export type ProfilePhoto = { name: string; at: string; liked: boolean; faults?: string[] };
@@ -637,12 +639,15 @@ export async function fetchProfile(lane: Lane): Promise<CompanionProfile> {
 }
 
 /** Her photos, newest first, a page at a time: `before` is the last one's `at`. */
-export async function fetchPhotos(lane: Lane, before = ''): Promise<{ photos: ProfilePhoto[]; more: boolean }> {
+/** `total`: all of her photos, not this page's (absent on an older maestro). */
+export type PhotoPage = { photos: ProfilePhoto[]; more: boolean; total?: number };
+
+export async function fetchPhotos(lane: Lane, before = ''): Promise<PhotoPage> {
   const query = before ? `&before=${encodeURIComponent(before)}` : '';
   const path = whoPath('/companion/photos');
   const res = await authedFetch(lane, `${path}${path.includes('?') ? '&' : '?'}limit=30${query}`);
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
-  return (await res.json()) as { photos: ProfilePhoto[]; more: boolean };
+  return (await res.json()) as PhotoPage;
 }
 
 /** Copy his hearted photos, captioned, next to her face model on the Mac, for a later retrain. */
