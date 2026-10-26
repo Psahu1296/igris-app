@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { Camera, Hammer, ImagePlus, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { Answer, Meta, Title } from '@/components/typography';
@@ -46,7 +47,32 @@ export default function Renovate() {
           <PlanCard key={p.id} plan={p} accent={accent} onOpen={() => void r.open(p.id)} />
         ))}
       </ScrollView>
+      {r.page ? <PlanPage html={r.page} onClose={r.close} /> : null}
     </SafeAreaView>
+  );
+}
+
+/** The finished plan, inside the app. The page is maestro's own (renovate/doc.py, photos inlined),
+ * so it needs no network; its rate-source links open in the browser (public sites, unlike the Mac). */
+function PlanPage({ html, onClose }: { html: string; onClose: () => void }) {
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <Title style={styles.headerTitle}>Your plan</Title>
+          <PressableScale onPress={onClose} hitSlop={12} accessibilityRole="button"
+            accessibilityLabel="Close the plan" style={styles.close}>
+            <X size={18} color={Palette.text} />
+          </PressableScale>
+        </View>
+        <WebView source={{ html }} originWhitelist={['about:*']} style={styles.page}
+          onShouldStartLoadWithRequest={(req) => {
+            if (req.url.startsWith('about:')) return true;
+            if (/^https?:/.test(req.url)) void Linking.openURL(req.url);
+            return false;
+          }} />
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -280,4 +306,5 @@ const styles = StyleSheet.create({
   size: { width: 52, textAlign: 'center' },
   status: { color: Palette.muted, fontSize: 13, flexShrink: 1 },
   total: { color: Palette.text, fontSize: 16, fontFamily: Font.uiMedium },
+  page: { flex: 1, backgroundColor: Palette.ground },
 });

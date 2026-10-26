@@ -1,6 +1,4 @@
-import { Linking } from 'react-native';
-
-import { urlFor, type Lane } from '@/lib/config';
+import type { Lane } from '@/lib/config';
 import { authedFetch } from '@/lib/maestro';
 
 /**
@@ -89,11 +87,14 @@ export async function confirmRooms(lane: Lane, id: string, rooms: Room[]): Promi
   return ok<RenovationPlan>(res, 'confirm the rooms');
 }
 
-/** Open the plan page in the browser. The link is fetched fresh: links expire. */
-export async function openPlan(lane: Lane, id: string): Promise<void> {
-  const plan = await getPlan(lane, id);
-  if (!plan.link) throw new Error('The plan page is not ready yet.');
-  await Linking.openURL(`${urlFor(lane)}${plan.link}`);
+/** The plan page's HTML, fetched with his token and shown in the app. Chrome was handed the
+ * signed link at first and never reached the Mac (2026-10-26: no /renovate/dl in the log),
+ * most likely its own secure DNS not resolving the tailnet's *.ts.net name. */
+export async function planPage(lane: Lane, id: string): Promise<string> {
+  const res = await authedFetch(lane, `/renovate/${id}/plan`);
+  if (res.status === 404) throw new Error('The plan page is not ready yet.');
+  if (!res.ok) throw new Error(`Could not open the plan (${res.status}).`);
+  return res.text();
 }
 
 const FT_PER_M = 3.2808;

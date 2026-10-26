@@ -7,7 +7,7 @@ import {
   getPlan,
   isBusy,
   myPlans,
-  openPlan,
+  planPage,
   startPlan,
   type NewPhoto,
   type RenovationPlan,
@@ -27,6 +27,8 @@ export function useRenovation(lane: Lane) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The plan page being shown, as HTML; null when closed. */
+  const [page, setPage] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const replace = (plan: RenovationPlan) =>
@@ -83,7 +85,11 @@ export function useRenovation(lane: Lane) {
     refresh,
     start: (message: string, sketch: string, photos: NewPhoto[]) => act(() => startPlan(lane, message, sketch, photos)),
     confirm: (id: string, rooms: Room[]) => act(() => confirmRooms(lane, id, rooms)),
+    page,
     open: (id: string) =>
-      openPlan(lane, id).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))),
+      planPage(lane, id)
+        .then(setPage)
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))),
+    close: () => setPage(null),
   };
 }
