@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Lane } from '@/lib/config';
 import {
   confirmRooms,
+  correctPlan,
   getPlan,
   isBusy,
   myPlans,
   planPage,
+  sharePlan,
   startPlan,
   type NewPhoto,
   type RenovationPlan,
@@ -20,7 +22,7 @@ const POLL_MS = 4000;
 
 /**
  * The renovation screen's behaviour: his plans, the one being worked on, polling it while
- * the Mac reads or plans, and the three actions (start, confirm the rooms, open the page).
+ * the Mac reads or plans, and his actions (start, confirm the rooms, open, share, correct).
  */
 export function useRenovation(lane: Lane) {
   const [plans, setPlans] = useState<RenovationPlan[]>([]);
@@ -70,8 +72,10 @@ export function useRenovation(lane: Lane) {
     setError(null);
     try {
       replace(await work());
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -91,5 +95,8 @@ export function useRenovation(lane: Lane) {
         .then(setPage)
         .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))),
     close: () => setPage(null),
+    share: (id: string) =>
+      sharePlan(lane, id).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))),
+    correct: (id: string, rooms: Room[], note: string) => act(() => correctPlan(lane, id, note, rooms)),
   };
 }

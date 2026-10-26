@@ -1,3 +1,7 @@
+import { File, Paths } from 'expo-file-system';
+import { printToFileAsync } from 'expo-print';
+import { shareAsync } from 'expo-sharing';
+
 import type { Lane } from '@/lib/config';
 import { authedFetch } from '@/lib/maestro';
 
@@ -7,6 +11,7 @@ import { authedFetch } from '@/lib/maestro';
  * GET /renovate/{id} like Scout's jobs, since there is no push.
  *
  *   reading → needs_confirm (he fixes the rooms) → confirmed → planning → planned | failed
+ *   planned | failed → (his correction) → confirmed → planning → …
  */
 
 export type PlanStatus = 'reading' | 'needs_confirm' | 'confirmed' | 'planning' | 'planned' | 'failed';
@@ -35,7 +40,10 @@ export type RenovationPlan = {
   problems: string[];
   photos: PlanPhoto[];
   total?: { low: number; high: number; quotes: string[] };
+  /** What Igris assumed or changed in code: what he is most likely to correct. */
   notes?: string[];
+  /** His corrections so far, oldest first. */
+  corrections?: string[];
   error: string;
   /** A signed path to the page, valid 30 minutes; present once it is planned. */
   link?: string;
@@ -87,6 +95,16 @@ export async function confirmRooms(lane: Lane, id: string, rooms: Room[]): Promi
   return ok<RenovationPlan>(res, 'confirm the rooms');
 }
 
+/** His correction to a finished plan: it goes back to planning with it. `rooms` is sent whole. */
+export async function correctPlan(lane: Lane, id: string, note: string, rooms: Room[]): Promise<RenovationPlan> {
+  const res = await authedFetch(lane, `/renovate/${id}/correct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note, rooms }),
+  });
+  return ok<RenovationPlan>(res, 'correct the plan');
+}
+
 /** The plan page's HTML, fetched with his token and shown in the app. Chrome was handed the
  * signed link at first and never reached the Mac (2026-10-26: no /renovate/dl in the log),
  * most likely its own secure DNS not resolving the tailnet's *.ts.net name. */
@@ -95,6 +113,16 @@ export async function planPage(lane: Lane, id: string): Promise<string> {
   if (res.status === 404) throw new Error('The plan page is not ready yet.');
   if (!res.ok) throw new Error(`Could not open the plan (${res.status}).`);
   return res.text();
+}
+
+/** The plan as a PDF, handed to Android's share sheet (WhatsApp, Gmail…). Made on the phone
+ * from the same page, photos and all: a link would need the Mac reachable from outside. */
+export async function sharePlan(lane: Lane, id: string): Promise<void> {
+  const { uri } = await printToFileAsync({ html: await planPage(lane, id) });
+  const named = new File(Paths.cache, `Renovation plan ${id}.pdf`);
+  if (named.exists) named.delete();
+  new File(uri).move(named);
+  await shareAsync(named.uri, { mimeType: 'application/pdf', dialogTitle: 'Share the renovation plan' });
 }
 
 const FT_PER_M = 3.2808;

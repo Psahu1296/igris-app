@@ -453,6 +453,11 @@ released with no underruns. Download to speech took under 20s on 5G.
   aloud" answers are spoken even with auto-speak off. Practice sessions (maestro
   study/) reuse the tutor's `tutor_card` A–D buttons; a deck-ready report is written into
   the thread by maestro and shows when the conversation is reopened (no push).
+- **Renovation plans open in the app, not Chrome** (2026-10-26): Chrome handed the signed
+  `*.ts.net` link never reached the Mac (its secure DNS ignores MagicDNS), so `lib/renovate.ts`
+  fetches the page with the token into a WebView; Share PDF prints that HTML on the phone
+  (`expo-print` → `expo-sharing`, native: runtime 1.3.0). expo-sharing's config plugin is left
+  out of app.json on purpose: it only sets up RECEIVING shares; sending needs no prebuild.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

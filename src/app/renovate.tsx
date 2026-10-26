@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Camera, Hammer, ImagePlus, Trash2, X } from 'lucide-react-native';
+import { Camera, Hammer, ImagePlus, Pencil, Share2, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,11 +40,13 @@ export default function Renovate() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {r.error ? <Answer style={styles.error}>{r.error}</Answer> : null}
         {/* Keyed by plan: a new plan waiting for its rooms starts a fresh form. */}
-        {waiting ? <ConfirmRooms key={waiting.id} plan={waiting} busy={r.busy} accent={accent} onConfirm={r.confirm} /> : null}
+        {waiting ? <RoomsForm key={waiting.id} plan={waiting} busy={r.busy} accent={accent}
+          onSend={(id, rooms) => r.confirm(id, rooms)} /> : null}
         <NewPlan busy={r.busy} accent={accent} onStart={r.start} />
         {r.loading ? <ActivityIndicator color={accent} /> : null}
         {r.plans.filter((p) => p.status !== 'needs_confirm').map((p) => (
-          <PlanCard key={p.id} plan={p} accent={accent} onOpen={() => void r.open(p.id)} />
+          <PlanCard key={p.id} plan={p} accent={accent} busy={r.busy} onOpen={() => void r.open(p.id)}
+            onShare={() => r.share(p.id)} onCorrect={r.correct} />
         ))}
       </ScrollView>
       {r.page ? <PlanPage html={r.page} onClose={r.close} /> : null}
@@ -77,7 +79,7 @@ function PlanPage({ html, onClose }: { html: string; onClose: () => void }) {
 }
 
 function NewPlan({ busy, accent, onStart }: {
-  busy: boolean; accent: string; onStart: (message: string, sketch: string, photos: NewPhoto[]) => Promise<void>;
+  busy: boolean; accent: string; onStart: (message: string, sketch: string, photos: NewPhoto[]) => Promise<unknown>;
 }) {
   const [message, setMessage] = useState('');
   const [sketch, setSketch] = useState<{ base64: string; uri: string } | null>(null);
@@ -163,8 +165,11 @@ function NewPlan({ busy, accent, onStart }: {
   );
 }
 
-function ConfirmRooms({ plan, busy, accent, onConfirm }: {
-  plan: RenovationPlan; busy: boolean; accent: string; onConfirm: (id: string, rooms: Room[]) => Promise<void>;
+/** His rooms, to confirm before the first plan — or, with `correcting`, to fix with a note on a
+ * finished one, so it is planned again. */
+function RoomsForm({ plan, busy, accent, onSend, correcting, onCancel }: {
+  plan: RenovationPlan; busy: boolean; accent: string; onSend: (id: string, rooms: Room[], note: string) => Promise<unknown>;
+  correcting?: boolean; onCancel?: () => void;
 }) {
   const [unit, setUnit] = useState<'m' | 'ft'>('m');
   type Draft = { name: string; length: string; width: string; height: string };
@@ -172,16 +177,37 @@ function ConfirmRooms({ plan, busy, accent, onConfirm }: {
     plan.rooms.map((room) => ({ name: room.name, length: fromFeet(room.length, u), width: fromFeet(room.width, u),
       height: fromFeet(room.height, u) }));
   const [rooms, setRooms] = useState<Draft[]>(() => fromPlan('m'));
+  const [note, setNote] = useState('');
 
   const set = (i: number, change: Partial<Draft>) => setRooms((list) => list.map((d, j) => (j === i ? { ...d, ...change } : d)));
   const send = () =>
-    onConfirm(plan.id, rooms.map((d) => ({ name: d.name.trim(), length: toFeet(d.length, unit), width: toFeet(d.width, unit),
-      height: d.height ? toFeet(d.height, unit) : 10 })));
+    onSend(plan.id, rooms.map((d) => ({ name: d.name.trim(), length: toFeet(d.length, unit), width: toFeet(d.width, unit),
+      height: d.height ? toFeet(d.height, unit) : 10 })), note.trim());
 
   return (
-    <View style={[styles.section, styles.card]}>
-      <Meta style={styles.sectionTitle}>CHECK THE ROOMS IGRIS READ</Meta>
-      <Answer style={styles.lede}>Fix any name or size, add what is missing, then confirm. Nothing is planned before this.</Answer>
+    <View style={[styles.section, !correcting && styles.card]}>
+      {correcting ? (
+        <>
+          <Meta style={styles.sectionTitle}>CORRECT THE PLAN</Meta>
+          <Answer style={styles.lede}>
+            Say what is wrong or what to change, in your words: &quot;no false ceiling&quot;, &quot;budget bathroom&quot;,
+            &quot;the wall to break is 10 ft&quot;, &quot;make it 4 lakh&quot;. Fix sizes below. It is planned again.
+          </Answer>
+          {plan.corrections?.length ? (
+            <Meta style={styles.switchText}>Already asked: {plan.corrections.join(' · ')}</Meta>
+          ) : null}
+          {plan.notes?.length ? <Meta style={styles.label}>What Igris assumed</Meta> : null}
+          {plan.notes?.map((n) => <Meta key={n} style={styles.switchText}>• {n}</Meta>)}
+          <TextInput value={note} onChangeText={setNote} placeholder="What to change" multiline
+            placeholderTextColor={Palette.faint} style={[styles.input, styles.note]} />
+          <Meta style={styles.label}>Rooms</Meta>
+        </>
+      ) : (
+        <>
+          <Meta style={styles.sectionTitle}>CHECK THE ROOMS IGRIS READ</Meta>
+          <Answer style={styles.lede}>Fix any name or size, add what is missing, then confirm. Nothing is planned before this.</Answer>
+        </>
+      )}
       {plan.problems.map((p) => <Meta key={p} style={styles.problem}>• {p}</Meta>)}
       <View style={styles.row}>
         {(['m', 'ft'] as const).map((u) => (
@@ -209,8 +235,9 @@ function ConfirmRooms({ plan, busy, accent, onConfirm }: {
       ))}
       <SmallButton text="Add a room" onPress={() => setRooms([...rooms, { name: '', length: '', width: '', height: '' }])} />
       <PressableScale onPress={() => void send()} disabled={busy} style={[styles.primary, { borderColor: accent }]}>
-        <Text style={styles.primaryText}>{busy ? 'Sending…' : 'Confirm and plan'}</Text>
+        <Text style={styles.primaryText}>{busy ? 'Sending…' : correcting ? 'Plan it again' : 'Confirm and plan'}</Text>
       </PressableScale>
+      {onCancel ? <SmallButton text="Cancel" onPress={onCancel} /> : null}
     </View>
   );
 }
@@ -223,7 +250,18 @@ const STATUS: Record<string, string> = {
   failed: 'Failed',
 };
 
-function PlanCard({ plan, accent, onOpen }: { plan: RenovationPlan; accent: string; onOpen: () => void }) {
+function PlanCard({ plan, accent, busy, onOpen, onShare, onCorrect }: {
+  plan: RenovationPlan; accent: string; busy: boolean; onOpen: () => void; onShare: () => Promise<void>;
+  onCorrect: (id: string, rooms: Room[], note: string) => Promise<boolean>;
+}) {
+  const [correcting, setCorrecting] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const finished = (plan.status === 'planned' || plan.status === 'failed') && plan.rooms.length > 0;
+  const share = async () => {
+    setSharing(true);
+    await onShare();
+    setSharing(false);
+  };
   return (
     <View style={[styles.section, styles.card]}>
       <Meta style={styles.sectionTitle}>{new Date(plan.created_at).toLocaleDateString('en-IN')}</Meta>
@@ -243,6 +281,21 @@ function PlanCard({ plan, accent, onOpen }: { plan: RenovationPlan; accent: stri
         <PressableScale onPress={onOpen} accessibilityRole="button" style={[styles.primary, { borderColor: accent }]}>
           <Text style={styles.primaryText}>Open plan</Text>
         </PressableScale>
+      ) : null}
+      {finished && !correcting ? (
+        <View style={styles.row}>
+          {plan.link ? (
+            <SmallButton icon={sharing ? <ActivityIndicator size="small" color={accent} /> : <Share2 size={16} color={Palette.text} />}
+              text={sharing ? 'Making PDF…' : 'Share PDF'} onPress={() => void share()} />
+          ) : null}
+          <SmallButton icon={<Pencil size={16} color={Palette.text} />} text="Correct" onPress={() => setCorrecting(true)} />
+        </View>
+      ) : null}
+      {finished && correcting ? (
+        <RoomsForm plan={plan} busy={busy} accent={accent} correcting onCancel={() => setCorrecting(false)}
+          onSend={async (id, rooms, note) => {
+            if (await onCorrect(id, rooms, note)) setCorrecting(false);      // a failed send keeps his words
+          }} />
       ) : null}
     </View>
   );
@@ -307,4 +360,5 @@ const styles = StyleSheet.create({
   status: { color: Palette.muted, fontSize: 13, flexShrink: 1 },
   total: { color: Palette.text, fontSize: 16, fontFamily: Font.uiMedium },
   page: { flex: 1, backgroundColor: Palette.ground },
+  note: { minHeight: 72, textAlignVertical: 'top' },
 });
