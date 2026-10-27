@@ -13,6 +13,7 @@ import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
 import { ChatMenu } from '@/components/companion/chat-menu';
+import { StoryViewer } from '@/components/companion/story-viewer';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
 import { TouchButton } from '@/components/companion/touch-button';
@@ -47,6 +48,8 @@ import {
   stopCompanion,
   toneColor,
   touchLine,
+  fetchStories,
+  type CompanionStory,
   type CompanionGift,
   type CompanionTouch,
   type CompanionDial,
@@ -93,6 +96,8 @@ type Turn = {
   touch?: { touch: CompanionTouch; taps: number };
   /** A gift from the tray. */
   gift?: CompanionGift;
+  /** A reply typed in the story viewer, and the story it answers. */
+  reply?: { story: CompanionStory; text: string };
 };
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
@@ -165,6 +170,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
   const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
+  const [storyCount, setStoryCount] = useState(seen?.stories ?? { count: 0, unseen: 0 });
+  // Her stories open in the viewer; null while it is closed.
+  const [watching, setWatching] = useState<CompanionStory[] | null>(null);
   const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
   // The open-once photos he has opened; the Mac keeps the list.
   const [opened, setOpened] = useState<string[]>(seen?.seen ?? []);
@@ -221,6 +229,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
         setGifts(c.gifts ?? []);
+        setStoryCount(c.stories ?? { count: 0, unseen: 0 });
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
         setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
@@ -294,9 +303,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
    */
   const send = useCallback(async (turn: Turn = {}) => {
     const text =
-      turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
-        ? undefined
-        : draft.trim();
+      turn.reply
+        ? turn.reply.text
+        : turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
+          ? undefined
+          : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -306,9 +317,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     setSendError(null);
     const at = new Date().toISOString();
     if (text !== undefined) {
-      setDraft('');
+      if (!turn.reply) setDraft('');
       const image = turn.photo ? { name: '', model: '', scene: '', his: true, uri: turn.photo.uri } : undefined;
-      setMessages((m) => [...m, { role: 'you', text, at, image }]);
+      const story = turn.reply ? { id: turn.reply.story.id, name: turn.reply.story.image.name, caption: turn.reply.story.caption } : undefined;
+      setMessages((m) => [...m, { role: 'you', text, at, image, story }]);
     }
     // A touch is saved on the Mac as his action; shown at once, the same line the Mac keeps.
     if (turn.touch) setMessages((m) => [...m, { role: 'you', text: touchLine(turn.touch!.touch, turn.touch!.taps), at }]);
@@ -344,6 +356,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         outfit: turn.outfit,
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps } : undefined,
         gift: turn.gift?.id,
+        story: turn.reply?.story.id,
         view: turn.view,
         live: liveOn,
         signal: controller.signal,
@@ -478,6 +491,16 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The companions on the Mac, in the app's own sheet (components/companion/switch-sheet.tsx).
   const switchTo = () => setSheet('switch');
 
+  /** Her stories in the viewer; the ring updates as he watches (each is marked seen on the Mac). */
+  const openStories = async () => {
+    try {
+      const got = await fetchStories(lane);
+      if (got.length) setWatching(got);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   /** Stop her: the Mac cuts the reply where it is; the running stream then ends with those words. */
   const stopHer = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -566,7 +589,12 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             style={styles.iconButton}>
             <ChevronLeft size={18} color={Palette.text} />
           </PressableScale>
-          <Avatar lane={lane} face={face} />
+          <Avatar
+            lane={lane}
+            face={face}
+            ring={storyCount.count ? (storyCount.unseen ? 'unseen' : 'seen') : null}
+            onStories={() => void openStories()}
+          />
           <Pressable
             style={styles.headerText}
             disabled={others.length === 0}
@@ -641,6 +669,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                   onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
                   seconds={m.role === 'her' && j === parts.length - 1 ? m.took : undefined}
                   ticks={m.role === 'you' && j === parts.length - 1 ? ticksFor(messages, i) : undefined}
+                  story={j === 0 ? m.story : undefined}
                   accent={accent}
                   speaking={speaking === m.at}
                   onSpeak={
@@ -734,6 +763,19 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {watching && name ? (
+          <StoryViewer
+            lane={lane}
+            name={name}
+            stories={watching}
+            accent={accent}
+            onReply={(story, text) => void send({ reply: { story, text } })}
+            onClose={() => {
+              setWatching(null);
+              void sync();
+            }}
+          />
+        ) : null}
         {sheet === 'menu' && name ? (
           <ChatMenu
             name={name}
@@ -885,6 +927,7 @@ function Bubble({
   onDelete,
   ticks,
   accent = ROSE,
+  story,
 }: {
   lane: Lane;
   mine: boolean;
@@ -915,6 +958,8 @@ function Bubble({
   ticks?: '✓' | '✓✓' | 'Seen';
   /** Her tone's colour (TONE_COLORS), for "Seen". */
   accent?: string;
+  /** His reply to one of her stories: which one, shown above his words. */
+  story?: { caption: string };
   /** Long-press this message to delete it, his or hers. */
   onDelete?: () => void;
 }) {
@@ -993,6 +1038,7 @@ function Bubble({
           ) : null}
         </View>
       ) : null}
+      {story ? <Meta style={styles.storyRef}>↩ her story · “{story.caption}”</Meta> : null}
       {text ? (
         <Text selectable style={mine ? styles.mineText : styles.hersText}>
           {emotes(text).map((part, i) =>
@@ -1067,8 +1113,12 @@ function Bubble({
   );
 }
 
-/** Her base face in the header, once there is one; a heart before her first photo. Opens her page. */
-function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
+/**
+ * Her base face in the header, once there is one; a heart before her first photo. With stories
+ * (maestro companion/stories.py) a ring goes round it — bright while some are unseen — and a tap
+ * opens them; long-press (or a tap without stories) opens her page.
+ */
+function Avatar({ lane, face, ring, onStories }: { lane: Lane; face: string | null; ring: 'unseen' | 'seen' | null; onStories: () => void }) {
   const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
   useEffect(() => {
     if (!face) return;
@@ -1083,11 +1133,12 @@ function Avatar({ lane, face }: { lane: Lane; face: string | null }) {
   // Her page (companion-profile.tsx): the full-screen photo moved there, on her big face.
   return (
     <PressableScale
-      onPress={() => router.push('/companion-profile')}
+      onPress={() => (ring ? onStories() : router.push('/companion-profile'))}
+      onLongPress={() => router.push('/companion-profile')}
       hitSlop={6}
       accessibilityRole="button"
-      accessibilityLabel="Her page"
-      style={styles.avatar}>
+      accessibilityLabel={ring ? 'Her stories (hold for her page)' : 'Her page'}
+      style={[styles.avatar, ring === 'unseen' ? styles.ringUnseen : ring === 'seen' ? styles.ringSeen : null]}>
       {face && source ? (
         <Image source={source} style={styles.avatarImage} contentFit="cover" />
       ) : (
@@ -1166,6 +1217,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarImage: { width: '100%', height: '100%' },
+  // Her stories: bright while some are unseen, faint once watched.
+  ringUnseen: { borderWidth: 2, borderColor: ROSE },
+  ringSeen: { borderWidth: 2, borderColor: Palette.hairline },
+  storyRef: { fontSize: 11, lineHeight: 14, color: Palette.ground, opacity: 0.7, marginBottom: 2 },
   headerText: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { fontSize: 20, lineHeight: 24 },

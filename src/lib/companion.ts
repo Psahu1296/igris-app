@@ -52,7 +52,12 @@ export type CompanionMessage = {
   took?: number;
   /** His message she read and did not answer, sulking (maestro companion/tone.py). */
   left_on_seen?: boolean;
+  /** His reply to one of her stories (maestro companion/stories.py). */
+  story?: { id: string; name: string; caption: string };
 };
+
+/** One of her stories: a photo of her own day, kept 24 hours on the Mac (maestro companion/stories.py). */
+export type CompanionStory = { id: string; at: string; caption: string; seen: boolean; image: { name: string; model: string } };
 
 /**
  * Her chat's colour by her tone (maestro companion/tone.py `TONES`): rose by default, deep red
@@ -171,6 +176,8 @@ export type Companion = {
   touches?: CompanionTouch[];
   /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */
   gifts?: CompanionGift[];
+  /** Her stories of the last day: a ring on her avatar while some are unseen. */
+  stories?: { count: number; unseen: number };
 };
 
 /** Photos queued on the Mac: drawn one by one while the chat goes on. */
@@ -387,6 +394,19 @@ export async function stopCompanion(lane: Lane): Promise<{ stopped: boolean; dro
   return (await res.json()) as { stopped: boolean; dropped: number };
 }
 
+/** Her stories of the last day, oldest first. */
+export async function fetchStories(lane: Lane): Promise<CompanionStory[]> {
+  const res = await authedFetch(lane, whoPath('/companion/stories'));
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return ((await res.json()) as { stories: CompanionStory[] }).stories;
+}
+
+/** He watched one: the ring goes when none are left unseen. Best effort. */
+export async function markStorySeen(lane: Lane, id: string): Promise<void> {
+  await post(lane, whoPath('/companion/stories/seen'), { id }).catch(() => undefined);
+}
+
 /** Her diary, newest first. */
 export async function fetchDiary(lane: Lane): Promise<DiaryEntry[]> {
   const res = await authedFetch(lane, whoPath('/companion/diary'));
@@ -472,6 +492,8 @@ export async function streamCompanion(opts: {
   message?: string;
   /** A photo of his, base64, sent with (or instead of) `message`. */
   image?: string;
+  /** His message answers this story of hers (its id). */
+  story?: string;
   /** A scene card's id; `message` and `image` are then ignored. */
   scene?: string;
   /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
@@ -488,7 +510,7 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, story, live = false, view, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card =
     scene !== undefined
@@ -508,7 +530,7 @@ export async function streamCompanion(opts: {
       ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps } : { id: card.id })
       : snap
         ? undefined
-        : JSON.stringify({ message: message ?? '', image, live });
+        : JSON.stringify({ message: message ?? '', image, live, story });
   const run = (token: string) =>
     streamFetch(`${urlFor(lane)}${whoPath(`/companion/${path}`)}`, {
       method: 'POST',
