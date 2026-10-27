@@ -486,7 +486,10 @@ released with no underruns. Download to speech took under 20s on 5G.
   (`gifts`, POST `/companion/gift`); wearable ones come back under Outfits. Stories: a ring on her
   avatar (tap = watch, hold = her page), `components/companion/story-viewer.tsx`, a reply is a
   message with `story`. Her photos full screen: a tap shows `touch_spots` at the finger
-  (`PhotoViewer` `spots`/`onTouch`) and sends that touch. All JS (OTA).
+  (`PhotoViewer` `spots`/`onTouch`) and sends that touch. Her latest message may carry `choices`
+  (buttons: a string is sent as his message, {label, touch} as that touch) — games and her first
+  moves. Her name is followed by her tone as weather (`TONE_WEATHER`) and 🔥N (`streak`, dimmed
+  while today's morning is open). All JS (OTA).
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

@@ -47,6 +47,7 @@ import {
   withoutTag,
   stopCompanion,
   toneColor,
+  TONE_WEATHER,
   touchLine,
   fetchStories,
   type CompanionStory,
@@ -98,6 +99,8 @@ type Turn = {
   gift?: CompanionGift;
   /** A reply typed in the story viewer, and the story it answers. */
   reply?: { story: CompanionStory; text: string };
+  /** A button under her message: its words, sent as his message. */
+  say?: string;
 };
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
@@ -173,6 +176,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // Where he can touch her from her photo, for the moment (maestro touch.SPOTS).
   const [touchSpots, setTouchSpots] = useState<CompanionTouch[]>(seen?.touch_spots ?? []);
   const [storyCount, setStoryCount] = useState(seen?.stories ?? { count: 0, unseen: 0 });
+  const [streak, setStreak] = useState(seen?.streak ?? { days: 0, today: false });
   // Her stories open in the viewer; null while it is closed.
   const [watching, setWatching] = useState<CompanionStory[] | null>(null);
   const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
@@ -233,6 +237,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setGifts(c.gifts ?? []);
         setTouchSpots(c.touch_spots ?? []);
         setStoryCount(c.stories ?? { count: 0, unseen: 0 });
+        setStreak(c.streak ?? { days: 0, today: false });
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
         setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
@@ -308,7 +313,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     const text =
       turn.reply
         ? turn.reply.text
-        : turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
+        : turn.say
+          ? turn.say
+          : turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
           ? undefined
           : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
@@ -606,6 +613,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             accessibilityLabel={others.length ? `Talking to ${name ?? 'her'}. Switch companion` : undefined}>
             <View style={styles.nameRow}>
               <Title style={styles.name}>{name ?? ' '}</Title>
+              {/* Her mood as weather, and the mornings kept in a row (maestro tone.py, rituals.py). */}
+              {name ? <Text style={styles.weather}>{TONE_WEATHER[tone ?? 'neutral'] ?? TONE_WEATHER.neutral}</Text> : null}
+              {streak.days > 0 ? (
+                <Text style={[styles.streak, !streak.today && styles.streakOpen]}>🔥{streak.days}</Text>
+              ) : null}
               {others.length ? <ChevronDown size={16} color={Palette.muted} /> : null}
             </View>
             <Meta numberOfLines={1}>
@@ -686,6 +698,33 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                 />
               ));
             })}
+            {(() => {
+              // Buttons under her latest message, while it is still the last word (maestro choices.py).
+              const last = messages[messages.length - 1];
+              if (!last || last.role !== 'her' || !last.choices?.length || live !== null) return null;
+              return (
+                <View style={styles.choices}>
+                  {last.choices.map((choice) => {
+                    const label = typeof choice === 'string' ? choice : choice.label;
+                    return (
+                      <PressableScale
+                        key={label}
+                        onPress={() => {
+                          if (typeof choice === 'string') return void send({ say: choice });
+                          const known = [...touches, ...touchSpots].find((t) => t.id === choice.touch);
+                          const touch = known ?? { id: choice.touch, label, icon: 'Hand', lines: [label, label, label] as [string, string, string] };
+                          void send({ touch: { touch, taps: 1 } });
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={label}
+                        style={[styles.choice, { borderColor: accent }]}>
+                        <Text style={[styles.choiceText, { color: accent }]}>{label}</Text>
+                      </PressableScale>
+                    );
+                  })}
+                </View>
+              );
+            })()}
             {snapping ? (
               <View style={[styles.bubble, styles.hers, styles.snapping]}>
                 <View style={styles.snapRow}>
@@ -1237,6 +1276,13 @@ const styles = StyleSheet.create({
   // Her stories: bright while some are unseen, faint once watched.
   ringUnseen: { borderWidth: 2, borderColor: ROSE },
   ringSeen: { borderWidth: 2, borderColor: Palette.hairline },
+  weather: { fontSize: 15, marginLeft: 2 },
+  streak: { fontFamily: Font.uiMedium, fontSize: 12, color: Palette.text, marginLeft: 2 },
+  // Today's morning still open: the streak waits, dimmed.
+  streakOpen: { opacity: 0.45 },
+  choices: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, marginTop: Space.xs, marginLeft: Space.sm },
+  choice: { paddingHorizontal: Space.md, paddingVertical: 7, borderRadius: 16, borderWidth: 1, backgroundColor: Palette.surfaceGlass },
+  choiceText: { fontFamily: Font.uiMedium, ...Type.small },
   storyRef: { fontSize: 11, lineHeight: 14, color: Palette.ground, opacity: 0.7, marginBottom: 2 },
   headerText: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

@@ -54,6 +54,22 @@ export type CompanionMessage = {
   left_on_seen?: boolean;
   /** His reply to one of her stories (maestro companion/stories.py). */
   story?: { id: string; name: string; caption: string };
+  /** Buttons under her message (maestro companion/choices.py): a game's answers (text he sends back)
+   * or, after a first move of hers (firstmove.py), touches he answers with. */
+  choices?: (string | { label: string; touch: string })[];
+  /** Her good morning / good night (maestro companion/rituals.py). */
+  ritual?: 'morning' | 'night';
+};
+
+/** Her tone as weather beside her name (maestro companion/tone.py TONES). */
+export const TONE_WEATHER: Record<string, string> = {
+  neutral: '⛅',
+  flirty: '💗',
+  intimate: '🔥',
+  afterglow: '🌙',
+  happy: '☀️',
+  low: '🌧️',
+  sulking: '⚡',
 };
 
 /** One of her stories: a photo of her own day, kept 24 hours on the Mac (maestro companion/stories.py). */
@@ -180,6 +196,8 @@ export type Companion = {
   gifts?: CompanionGift[];
   /** Her stories of the last day: a ring on her avatar while some are unseen. */
   stories?: { count: number; unseen: number };
+  /** Mornings they both kept in a row (maestro companion/rituals.py). */
+  streak?: { days: number; today: boolean };
 };
 
 /** Photos queued on the Mac: drawn one by one while the chat goes on. */
