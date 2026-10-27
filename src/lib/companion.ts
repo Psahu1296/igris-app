@@ -174,6 +174,8 @@ export type Companion = {
   photos?: CompanionPhotosComing | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
+  /** Where he can touch her from her photo, for the moment (maestro touch.SPOTS). */
+  touch_spots?: CompanionTouch[];
   /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */
   gifts?: CompanionGift[];
   /** Her stories of the last day: a ring on her avatar while some are unseen. */

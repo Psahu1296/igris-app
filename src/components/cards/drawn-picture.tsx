@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, ToastAndroid, View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
-import { PhotoViewer } from '@/components/photo-viewer';
+import { PhotoViewer, type TouchSpot } from '@/components/photo-viewer';
 import { Meta } from '@/components/typography';
 import { Palette, Space } from '@/constants/theme';
 import { saveDrawn } from '@/lib/gallery';
@@ -17,7 +17,22 @@ import { drawnSource, type Drawn, type Lane } from '@/lib/maestro';
  * blank box — most often a conversation reopened on Render, which has no pictures.
  * A tap opens it full screen (PhotoViewer).
  */
-export function DrawnPicture({ lane, picture, aspect = 1 }: { lane: Lane; picture: Drawn; aspect?: number }) {
+export function DrawnPicture({
+  lane,
+  picture,
+  aspect = 1,
+  spots,
+  accent,
+  onTouch,
+}: {
+  lane: Lane;
+  picture: Drawn;
+  aspect?: number;
+  /** Her photo in the companion chat: a tap on it full screen touches her there (PhotoViewer). */
+  spots?: TouchSpot[];
+  accent?: string;
+  onTouch?: (spot: TouchSpot) => void;
+}) {
   const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -46,7 +61,14 @@ export function DrawnPicture({ lane, picture, aspect = 1 }: { lane: Lane; pictur
           onError={() => setFailed(true)}
         />
       </Pressable>
-      <PhotoViewer source={open ? source : null} label={picture.prompt} onClose={() => setOpen(false)} />
+      <PhotoViewer
+        source={open ? source : null}
+        label={picture.prompt}
+        onClose={() => setOpen(false)}
+        spots={spots}
+        accent={accent}
+        onTouch={onTouch}
+      />
       <SaveButton lane={lane} name={picture.name} />
       {picture.model ? <Meta style={styles.model}>Drawn with {picture.model}</Meta> : null}
     </View>

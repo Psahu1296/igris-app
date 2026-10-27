@@ -1,11 +1,16 @@
+import * as Haptics from 'expo-haptics';
 import { Image, type ImageSource } from 'expo-image';
 import { X } from 'lucide-react-native';
-import { Modal, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, ZoomIn, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { PressableScale } from '@/components/pressable-scale';
-import { Palette, Space } from '@/constants/theme';
+import { Font, Palette, Space, Type } from '@/constants/theme';
+
+/** A place on her he can touch from her photo (maestro companion/touch.py SPOTS). */
+export type TouchSpot = { id: string; label: string };
 
 const MAX = 5;
 const TAP_ZOOM = 2.5;
@@ -13,17 +18,73 @@ const TAP_ZOOM = 2.5;
 /**
  * One picture, full screen: pinch to zoom, drag to move it once zoomed, double tap to
  * zoom in and back, a single tap or the back button to close. `source` null = shut.
+ *
+ * With `spots` (her photos in the companion chat), a single tap touches her instead of closing:
+ * a ripple where the finger landed and the spots that fit the moment around it; picking one
+ * calls `onTouch` and closes, so her reaction is the next thing he sees. ✕ still closes.
  */
-export function PhotoViewer({ source, label, onClose }: { source: ImageSource | null; label?: string; onClose: () => void }) {
+export function PhotoViewer({
+  source,
+  label,
+  onClose,
+  spots,
+  accent = '#FB7185',
+  onTouch,
+}: {
+  source: ImageSource | null;
+  label?: string;
+  onClose: () => void;
+  spots?: TouchSpot[];
+  accent?: string;
+  onTouch?: (spot: TouchSpot) => void;
+}) {
   return (
     <Modal visible={source !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       {/* A Modal is its own native window: gestures need a root of their own inside it. */}
-      <GestureHandlerRootView style={styles.fill}>{source ? <Zoomable source={source} label={label} onClose={onClose} /> : null}</GestureHandlerRootView>
+      <GestureHandlerRootView style={styles.fill}>
+        {source ? (
+          <Zoomable
+            source={source}
+            label={label}
+            onClose={onClose}
+            spots={spots?.length && onTouch ? spots : undefined}
+            accent={accent}
+            onTouch={onTouch}
+          />
+        ) : null}
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
-function Zoomable({ source, label, onClose }: { source: ImageSource; label?: string; onClose: () => void }) {
+function Zoomable({
+  source,
+  label,
+  onClose,
+  spots,
+  accent,
+  onTouch,
+}: {
+  source: ImageSource;
+  label?: string;
+  onClose: () => void;
+  spots?: TouchSpot[];
+  accent: string;
+  onTouch?: (spot: TouchSpot) => void;
+}) {
+  // Where his finger landed on her photo, while the spot picker is up.
+  const [touched, setTouched] = useState<{ x: number; y: number } | null>(null);
+  const tapped = (x: number, y: number) => {
+    if (!spots) return onClose();
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTouched({ x, y });
+  };
+  const pick = (spot: TouchSpot) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setTouched(null);
+    onTouch?.(spot);
+    onClose();
+  };
   const scale = useSharedValue(1);
   const from = useSharedValue(1);
   const x = useSharedValue(0);
@@ -65,8 +126,8 @@ function Zoomable({ source, label, onClose }: { source: ImageSource; label?: str
       if (scale.value > 1) reset();
       else scale.value = withTiming(TAP_ZOOM);
     });
-  const tap = Gesture.Tap().onEnd(() => {
-    runOnJS(onClose)();
+  const tap = Gesture.Tap().onEnd((e) => {
+    runOnJS(tapped)(e.absoluteX, e.absoluteY);
   });
   const gestures = Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, tap));
   const moved = useAnimatedStyle(() => ({
@@ -80,6 +141,35 @@ function Zoomable({ source, label, onClose }: { source: ImageSource; label?: str
           <Image source={source} style={styles.fill} contentFit="contain" accessibilityLabel={label ?? 'A picture'} />
         </Animated.View>
       </GestureDetector>
+      {touched && spots ? (
+        <>
+          {/* A tap elsewhere puts the picker away. */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setTouched(null)} accessibilityLabel="Cancel" />
+          <Animated.View
+            entering={ZoomIn.duration(220)}
+            pointerEvents="none"
+            style={[styles.ripple, { left: touched.x - 28, top: touched.y - 28, borderColor: accent }]}
+          />
+          <Animated.View
+            entering={FadeIn.duration(150)}
+            exiting={FadeOut.duration(120)}
+            // Below the finger, or above it when it landed in the lower part of the screen.
+            style={[styles.spots, touched.y > Dimensions.get('window').height * 0.6
+              ? { bottom: Dimensions.get('window').height - touched.y + 40 }
+              : { top: Math.max(Space.huge, touched.y + 40) }]}>
+            {spots.map((spot) => (
+              <Pressable
+                key={spot.id}
+                onPress={() => pick(spot)}
+                accessibilityRole="button"
+                accessibilityLabel={`Touch ${spot.label}`}
+                style={[styles.spot, { borderColor: accent }]}>
+                <Text style={styles.spotText}>{spot.label}</Text>
+              </Pressable>
+            ))}
+          </Animated.View>
+        </>
+      ) : null}
       <PressableScale onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
         <X size={18} color={Palette.text} />
       </PressableScale>
@@ -89,6 +179,24 @@ function Zoomable({ source, label, onClose }: { source: ImageSource; label?: str
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  ripple: { position: 'absolute', width: 56, height: 56, borderRadius: 28, borderWidth: 2 },
+  spots: {
+    position: 'absolute',
+    left: Space.lg,
+    right: Space.lg,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: Space.sm,
+  },
+  spot: {
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.sm,
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: 'rgba(9, 8, 14, 0.85)',
+  },
+  spotText: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.small },
   ground: { flex: 1, backgroundColor: 'rgba(5, 4, 9, 0.97)' },
   close: {
     position: 'absolute',

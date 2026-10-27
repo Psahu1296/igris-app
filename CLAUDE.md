@@ -477,6 +477,16 @@ released with no underruns. Download to speech took under 20s on 5G.
   and reverted the same evening). Pass `useSwipe` a stable callback (useCallback).
 - **Switching companion is a sheet** (`components/companion/switch-sheet.tsx`, 2026-10-27), on the
   shared `BottomSheet`: every companion with her face; it replaced an `Alert` that held two names.
+- **Companion fun, 2026-10-27** (maestro `.scratch/companion-fun/PRD.md`). Her header is back, face,
+  name + mood line + online/last seen, and one ⋯ (`components/companion/chat-menu.tsx`: Live,
+  Director, read aloud, Clear; a dot when Live or Director is on). While she writes or photos wait,
+  send becomes ■ (`stopCompanion` → POST `/companion/stop`). A failed send is a chip with "Send
+  again". Her `state.tone` colours a glow behind the header and the touch button (`TONE_COLORS`);
+  his bubbles carry ✓ / ✓✓ / "Seen" (`left_on_seen`, maestro tone.py). Gifts are a tray tab
+  (`gifts`, POST `/companion/gift`); wearable ones come back under Outfits. Stories: a ring on her
+  avatar (tap = watch, hold = her page), `components/companion/story-viewer.tsx`, a reply is a
+  message with `story`. Her photos full screen: a tap shows `touch_spots` at the finger
+  (`PhotoViewer` `spots`/`onTouch`) and sends that touch. All JS (OTA).
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

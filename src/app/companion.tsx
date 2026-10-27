@@ -170,6 +170,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
   const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
+  // Where he can touch her from her photo, for the moment (maestro touch.SPOTS).
+  const [touchSpots, setTouchSpots] = useState<CompanionTouch[]>(seen?.touch_spots ?? []);
   const [storyCount, setStoryCount] = useState(seen?.stories ?? { count: 0, unseen: 0 });
   // Her stories open in the viewer; null while it is closed.
   const [watching, setWatching] = useState<CompanionStory[] | null>(null);
@@ -229,6 +231,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
         setGifts(c.gifts ?? []);
+        setTouchSpots(c.touch_spots ?? []);
         setStoryCount(c.stories ?? { count: 0, unseen: 0 });
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
@@ -670,6 +673,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                   seconds={m.role === 'her' && j === parts.length - 1 ? m.took : undefined}
                   ticks={m.role === 'you' && j === parts.length - 1 ? ticksFor(messages, i) : undefined}
                   story={j === 0 ? m.story : undefined}
+                  spots={m.role === 'her' ? touchSpots : undefined}
+                  onTouchSpot={(spot) => void send({ touch: { touch: spot, taps: 1 } })}
                   accent={accent}
                   speaking={speaking === m.at}
                   onSpeak={
@@ -928,6 +933,8 @@ function Bubble({
   ticks,
   accent = ROSE,
   story,
+  spots,
+  onTouchSpot,
 }: {
   lane: Lane;
   mine: boolean;
@@ -960,6 +967,9 @@ function Bubble({
   accent?: string;
   /** His reply to one of her stories: which one, shown above his words. */
   story?: { caption: string };
+  /** Her photo full screen: tap it to touch her there (maestro touch.SPOTS for the moment). */
+  spots?: CompanionTouch[];
+  onTouchSpot?: (spot: CompanionTouch) => void;
   /** Long-press this message to delete it, his or hers. */
   onDelete?: () => void;
 }) {
@@ -981,7 +991,14 @@ function Bubble({
         </View>
       ) : image ? (
         <View style={styles.photo}>
-          <DrawnPicture lane={lane} picture={{ name: image.name, prompt: image.scene }} aspect={PHOTO_ASPECT} />
+          <DrawnPicture
+            lane={lane}
+            picture={{ name: image.name, prompt: image.scene }}
+            aspect={PHOTO_ASPECT}
+            spots={spots}
+            accent={accent}
+            onTouch={onTouchSpot ? (spot) => onTouchSpot(spot as CompanionTouch) : undefined}
+          />
           {isFace ? (
             <View style={styles.faceBadge}>
               <UserRound size={11} color={Palette.text} />
