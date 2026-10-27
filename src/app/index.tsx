@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Check, Copy, Menu, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/composer';
@@ -161,7 +162,8 @@ export default function Transcript() {
         </View>
 
         {/* A sideways swipe right on the chat opens the menu (lib/use-swipe.ts). */}
-        <View style={styles.fill} {...openSwipe}>
+        <GestureDetector gesture={openSwipe}>
+        <View style={styles.fill}>
         <ScrollView
           ref={scroller}
           style={styles.scroll}
@@ -204,6 +206,7 @@ export default function Transcript() {
           )}
         </ScrollView>
         </View>
+        </GestureDetector>
 
         <Composer
           lane={lane}

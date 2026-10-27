@@ -12,6 +12,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { ToastAndroid, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplash } from '@/components/animated-splash';
@@ -40,13 +41,16 @@ export default function RootLayout() {
   // and then jump.
   if (!fontsLoaded) return null;
 
+  // Gesture handler needs one root above every GestureDetector (the side menu's swipe).
   return (
-    <SafeAreaProvider>
-      <SessionProvider>
-        <StatusBar style="light" />
-        <Shell />
-      </SessionProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <SessionProvider>
+          <StatusBar style="light" />
+          <Shell />
+        </SessionProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

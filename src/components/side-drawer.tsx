@@ -20,6 +20,7 @@ import {
 import { useEffect, useState } from 'react';
 import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from 'react-native-reanimated';
+import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IgrisMark } from '@/components/igris-mark';
@@ -115,6 +116,8 @@ export function SideDrawer({
         // content out as the screen minus BOTH system bars but starts it at the top, so a
         // flex:1 drawer ended ~156px short and the chat's composer showed under "Sign out"
         // (OnePlus 11R, 2026-09-24). The Modal's window itself is full screen.
+        // A Modal is its own window: gesture handler needs a root inside it too (photo-viewer.tsx).
+        <GestureHandlerRootView style={styles.fill}>
         <View style={[styles.modalOverlay, { height: Dimensions.get('screen').height }]}>
           {/* Semi-transparent Backdrop */}
           <Animated.View
@@ -125,11 +128,11 @@ export function SideDrawer({
           </Animated.View>
 
           {/* Sliding Drawer Panel */}
+          <GestureDetector gesture={closeSwipe}>
           <Animated.View
             entering={SlideInLeft.duration(250)}
             exiting={SlideOutLeft.duration(EXIT_MS)}
-            style={styles.drawerPanel}
-            {...closeSwipe}>
+            style={styles.drawerPanel}>
             <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
               {/* Header with Brand */}
               <View style={styles.header}>
@@ -360,7 +363,9 @@ export function SideDrawer({
               </View>
             </SafeAreaView>
           </Animated.View>
+          </GestureDetector>
         </View>
+        </GestureHandlerRootView>
       ) : null}
     </Modal>
   );

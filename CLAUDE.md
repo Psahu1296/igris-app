@@ -471,8 +471,10 @@ released with no underruns. Download to speech took under 20s on 5G.
   shown at once as his bubble; POST `/companion/touch`. Dimmed while she replies. JS only: an OTA.
 - **Swiping the side menu** (`lib/use-swipe.ts`, 2026-10-27): a clear sideways swipe right on the
   chat opens it, left on the menu closes it. Not an edge swipe — under gesture navigation the edge
-  is Android's Back. RN PanResponder on the bubble phase, so horizontal scrollers inside keep theirs.
-  Pass `useSwipe` a stable callback (useCallback): a new one rebuilds the responder mid-drag.
+  is Android's Back. Gesture handler's Pan (`activeOffsetX` 25, `failOffsetY` 12), with a
+  GestureHandlerRootView at the root and inside the drawer's Modal. **Not RN's PanResponder**: a
+  PanResponder View around the chat's ScrollView stopped the chat scrolling on the phone (shipped
+  and reverted the same evening). Pass `useSwipe` a stable callback (useCallback).
 - **Switching companion is a sheet** (`components/companion/switch-sheet.tsx`, 2026-10-27), on the
   shared `BottomSheet`: every companion with her face; it replaced an `Alert` that held two names.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
