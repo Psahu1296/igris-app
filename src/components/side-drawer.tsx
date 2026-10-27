@@ -20,7 +20,8 @@ import {
 import { useEffect, useState } from 'react';
 import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from 'react-native-reanimated';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+// Gesture handler's ScrollView: it negotiates natively with the panel's swipe-to-close pan.
+import { GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IgrisMark } from '@/components/igris-mark';
@@ -156,6 +157,9 @@ export function SideDrawer({
                 </PressableScale>
               </View>
 
+              {/* Everything between the brand and Sign out scrolls: the rows outgrew a phone's
+                  height (Prep, Renovation, Companion…) and the lower ones could not be reached. */}
+              <ScrollView style={styles.fill} contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
               {/* Quick Primary Action: New Conversation */}
               <View style={styles.newConvWrapper}>
                 <PressableScale
@@ -348,8 +352,7 @@ export function SideDrawer({
                 </PressableScale>
               </View>
 
-              {/* Spacer */}
-              <View style={styles.flexSpacer} />
+              </ScrollView>
 
               {/* Footer Sign Out */}
               <View style={styles.footer}>
@@ -390,6 +393,7 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
   },
+  scrollBody: { paddingBottom: Space.md },
   drawerPanel: {
     width: '82%',
     maxWidth: 320,
@@ -535,9 +539,6 @@ const styles = StyleSheet.create({
   laneDesc: {
     color: Palette.muted,
     fontSize: 11,
-  },
-  flexSpacer: {
-    flex: 1,
   },
   footer: {
     borderTopWidth: 1,
