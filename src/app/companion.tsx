@@ -11,7 +11,9 @@ import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
+import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
+import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
@@ -40,6 +42,8 @@ import {
   streamCompanion,
   withEmote,
   withoutTag,
+  touchLine,
+  type CompanionTouch,
   type CompanionDial,
   type CompanionListing,
   type CompanionPhotosComing,
@@ -74,7 +78,15 @@ import { useSession } from '@/state/session';
  * a game, a photo of his, the mic. A heart on her message tells her what he liked.
  */
 /** What starts a turn besides the typed draft: the camera button, a scene card, a photo of his. */
-type Turn = { snap?: boolean; scene?: string; outfit?: string; photo?: Photo; view?: PhotoView };
+type Turn = {
+  snap?: boolean;
+  scene?: string;
+  outfit?: string;
+  photo?: Photo;
+  view?: PhotoView;
+  /** A touch from the floating button and how many taps the burst had. */
+  touch?: { touch: CompanionTouch; taps: number };
+};
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
 
@@ -140,13 +152,17 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [liked, setLiked] = useState<string[]>(seen?.liked ?? []);
   const [scenes, setScenes] = useState<CompanionScene[]>(seen?.scenes ?? []);
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
+  // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
+  const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
   const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
   // The open-once photos he has opened; the Mac keeps the list.
   const [opened, setOpened] = useState<string[]>(seen?.seen ?? []);
   const [others, setOthers] = useState<CompanionListing[]>(
     (seen?.companions ?? []).filter((c) => c.id !== seen?.id)
   );
-  const [sheet, setSheet] = useState<'memory' | 'diary' | null>(null);
+  // Every companion on the Mac, her included: the switch sheet lists them all.
+  const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'switch' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -191,9 +207,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setLiked(c.liked ?? []);
         setScenes(c.scenes ?? []);
         setOutfits(c.outfits ?? []);
+        setTouches(c.touches ?? []);
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
         setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
+        setEveryone(c.companions ?? []);
         setMessages(view.messages);
         setLive(view.live);
         setSnapping(view.snapping);
@@ -263,7 +281,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
    */
   const send = useCallback(async (turn: Turn = {}) => {
     const text =
-      turn.snap || turn.view || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
+      turn.snap || turn.view || turn.touch || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -277,6 +295,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
       const image = turn.photo ? { name: '', model: '', scene: '', his: true, uri: turn.photo.uri } : undefined;
       setMessages((m) => [...m, { role: 'you', text, at, image }]);
     }
+    // A touch is saved on the Mac as his action; shown at once, the same line the Mac keeps.
+    if (turn.touch) setMessages((m) => [...m, { role: 'you', text: touchLine(turn.touch!.touch, turn.touch!.taps), at }]);
     setLive('');
     let words = '';
     let felt = 0;
@@ -306,6 +326,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         image: turn.photo?.base64,
         scene: turn.scene,
         outfit: turn.outfit,
+        touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps } : undefined,
         view: turn.view,
         live: liveOn,
         signal: controller.signal,
@@ -433,14 +454,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     else void listening.start((heard) => setDraft((d) => (d ? `${d} ${heard}` : heard)));
   };
 
-  // The other companions on the Mac, one tap each (Android's alert holds three buttons:
-  // two companions to switch to and Cancel; a longer list will want a sheet).
-  const switchTo = () => {
-    Alert.alert('Talk to', undefined, [
-      ...others.slice(0, 2).map((o) => ({ text: o.busy ? `${o.name} (replying…)` : o.name, onPress: () => onSwitch(o.id) })),
-      { text: 'Cancel', style: 'cancel' as const },
-    ]);
-  };
+  // The companions on the Mac, in the app's own sheet (components/companion/switch-sheet.tsx).
+  const switchTo = () => setSheet('switch');
 
   const toggleLive = () => {
     const on = !liveOn;
@@ -591,10 +606,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             <TypingIndicator color={ROSE} />
           </View>
         ) : (
+          <View style={styles.fill}>
           <ScrollView
             ref={scroller}
             style={styles.fill}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={[styles.list, touches.length ? styles.listUnderTouch : null]}
             onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
             onLayout={() => scroller.current?.scrollToEnd({ animated: false })}
             keyboardDismissMode="none">
@@ -672,6 +688,15 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             ) : null}
             {sendError ? <Meta style={styles.error}>{sendError}</Meta> : null}
           </ScrollView>
+          {touches.length && !emoting ? (
+            <TouchButton
+              touches={touches}
+              disabled={busy}
+              accent={ROSE}
+              onTouch={(touch, taps) => void send({ touch: { touch, taps } })}
+            />
+          ) : null}
+          </View>
         )}
 
         {emoting ? (
@@ -692,6 +717,16 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'switch' ? (
+          <SwitchSheet
+            lane={lane}
+            current={companionWho.get()}
+            companions={everyone}
+            accent={ROSE}
+            onPick={onSwitch}
+            onClose={() => setSheet(null)}
+          />
+        ) : null}
         {directed ? (
           <DirectorSheet
             lane={lane}
@@ -1031,6 +1066,8 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { fontSize: 20, lineHeight: 24 },
   list: { paddingHorizontal: Gutter - 6, paddingVertical: Space.lg, gap: Space.sm },
+  // Room under the last message for the floating touch button.
+  listUnderTouch: { paddingBottom: 96 },
   hello: { textAlign: 'center', marginTop: Space.huge, marginHorizontal: Space.xl },
   bubble: { maxWidth: '82%', paddingHorizontal: Space.md + 2, paddingVertical: Space.sm + 1, borderRadius: 18 },
   mine: { alignSelf: 'flex-end', backgroundColor: Palette.surfaceLift, borderBottomRightRadius: 6 },

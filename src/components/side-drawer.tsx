@@ -28,6 +28,7 @@ import { Answer, Meta, Title } from '@/components/typography';
 import { Font, Gutter, laneColor, Palette, Space, Type } from '@/constants/theme';
 import type { Lane } from '@/lib/config';
 import type { LanePreference } from '@/lib/maestro';
+import { useSwipe } from '@/lib/use-swipe';
 
 /** How long the slide-out runs; the Modal stays up that long so it is seen. */
 const EXIT_MS = 220;
@@ -75,6 +76,8 @@ export function SideDrawer({
   onOpenLaneMenu,
 }: SideDrawerProps) {
   const accent = laneColor(lanePref);
+  // Swipe it back to the left to close, the way it slid in.
+  const closeSwipe = useSwipe('left', onClose);
 
   // The Modal outlives `visible` by EXIT_MS. Returning null (or hiding the Modal) the
   // moment `visible` went false unmounted the panel before Reanimated could run its
@@ -125,7 +128,8 @@ export function SideDrawer({
           <Animated.View
             entering={SlideInLeft.duration(250)}
             exiting={SlideOutLeft.duration(EXIT_MS)}
-            style={styles.drawerPanel}>
+            style={styles.drawerPanel}
+            {...closeSwipe}>
             <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
               {/* Header with Brand */}
               <View style={styles.header}>

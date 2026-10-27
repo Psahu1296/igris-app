@@ -100,6 +100,16 @@ export type CompanionPending = {
  */
 export class CompanionRefused extends Error {}
 
+/**
+ * A way he can touch her right now (maestro companion/touch.py): the floating button. The Mac
+ * decides which fit the moment; `lines` is his action for one tap, a few, and a burst.
+ */
+export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] };
+
+/** His action for a burst of taps, the same thresholds as touch.line on the Mac. */
+export const touchLine = (touch: CompanionTouch, taps: number) =>
+  taps <= 1 ? touch.lines[0] : taps <= 3 ? touch.lines[1] : touch.lines[2];
+
 /** One of the companions on the Mac (maestro companion/profiles.py), for the picker. */
 export type CompanionListing = { id: string; name: string; age: number; face: string | null; busy: boolean };
 
@@ -137,6 +147,8 @@ export type Companion = {
   companions?: CompanionListing[];
   /** Her photos still on their way (maestro companion/darkroom.py); null when none. Missing on an older maestro. */
   photos?: CompanionPhotosComing | null;
+  /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
+  touches?: CompanionTouch[];
 };
 
 /** Photos queued on the Mac: drawn one by one while the chat goes on. */
@@ -428,6 +440,8 @@ export async function streamCompanion(opts: {
   scene?: string;
   /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
   outfit?: string;
+  /** He touches her (POST /companion/touch): a touch's id and how many taps in the burst. */
+  touch?: { id: string; taps: number };
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   /** One of her photos again from his eyes or hers (maestro POST /companion/view): no words,
@@ -436,15 +450,22 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, live = false, view, onEvent, signal } = opts;
-  // A card (a scene or an outfit) is sent by its id; the camera button sends nothing at all.
-  const card = scene !== undefined ? { path: 'scene', id: scene } : outfit !== undefined ? { path: 'outfit', id: outfit } : null;
+  const { lane, message, image, scene, outfit, touch, live = false, view, onEvent, signal } = opts;
+  // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
+  const card =
+    scene !== undefined
+      ? { path: 'scene', id: scene }
+      : outfit !== undefined
+        ? { path: 'outfit', id: outfit }
+        : touch !== undefined
+          ? { path: 'touch', id: touch.id, taps: touch.taps }
+          : null;
   const snap = !card && !view && message === undefined && image === undefined;
   const path = view ? 'view' : card ? card.path : snap ? 'snap' : 'stream';
   const body = view
     ? JSON.stringify(view)
     : card
-      ? JSON.stringify({ id: card.id })
+      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps } : { id: card.id })
       : snap
         ? undefined
         : JSON.stringify({ message: message ?? '', image, live });
@@ -472,7 +493,8 @@ export async function streamCompanion(opts: {
     // Another companion's turn is running (one at a time on the Mac): nothing of this one
     // is pending, so it is a refusal to show, not a turn to wait for.
     const detail = ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? '';
-    if (detail.includes('one at a time')) throw new CompanionRefused(detail);
+    // One at a time across companions, or a touch the moment no longer allows (touch.py).
+    if (detail.includes('one at a time') || detail.includes("doesn't fit")) throw new CompanionRefused(detail);
     throw new Error('She is still answering.');
   }
   if (res.status === 400 || res.status === 422)

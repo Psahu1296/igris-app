@@ -21,6 +21,7 @@ import { useCompanionName } from '@/lib/companion';
 import { useConversation } from '@/lib/conversation/use-conversation';
 import { formatTranscript } from '@/lib/transcript';
 import { useBackGuard } from '@/lib/use-back-guard';
+import { useSwipe } from '@/lib/use-swipe';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useAutoSpeak } from '@/lib/voice/auto-speak';
 import { useListening } from '@/lib/voice/use-listening';
@@ -46,6 +47,13 @@ export default function Transcript() {
   const { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall, nextStep } = useConversation();
   const [laneMenuOpen, setLaneMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const openMenu = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setDrawerOpen(true);
+  }, []);
+  const openSwipe = useSwipe('right', openMenu);
+  // Stable, so the drawer's own swipe-to-close (useSwipe) is not rebuilt on every render.
+  const closeMenu = useCallback(() => setDrawerOpen(false), []);
   const companionName = useCompanionName(lane, drawerOpen);
   const [copiedChat, setCopiedChat] = useState(false);
   const [browsing, setBrowsing] = useState(false);
@@ -152,6 +160,8 @@ export default function Transcript() {
           </View>
         </View>
 
+        {/* A sideways swipe right on the chat opens the menu (lib/use-swipe.ts). */}
+        <View style={styles.fill} {...openSwipe}>
         <ScrollView
           ref={scroller}
           style={styles.scroll}
@@ -193,6 +203,7 @@ export default function Transcript() {
             ))
           )}
         </ScrollView>
+        </View>
 
         <Composer
           lane={lane}
@@ -226,7 +237,7 @@ export default function Transcript() {
 
       <SideDrawer
         visible={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeMenu}
         onOpenVoice={() => router.push('/voice')}
         onOpenChats={() => setBrowsing(true)}
         onOpenTodos={() => router.push('/todos')}

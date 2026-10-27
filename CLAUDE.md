@@ -464,6 +464,17 @@ released with no underruns. Download to speech took under 20s on 5G.
   public and only knows the kinds. Diary and memory reuse the chat's sheets; the photo grid
   pages `GET /companion/photos`, long-press hearts or deletes (the chat's own routes), and
   "Training set" asks the Mac to copy hearted photos for a later retrain. JS only: an OTA.
+- **Touch her: the floating button** (`components/companion/touch-button.tsx`, 2026-10-27). maestro
+  `GET /companion` lists `touches` for the moment (companion/touch.py decides: apart → sent kiss/hug/
+  poke, together → tickle…, intimate → finger…); the first is the button's face, long-press fans out
+  the rest. Taps within `BURST_MS` (900) are ONE touch sent with its count (`touchLine`: 1, 2–3, 4+),
+  shown at once as his bubble; POST `/companion/touch`. Dimmed while she replies. JS only: an OTA.
+- **Swiping the side menu** (`lib/use-swipe.ts`, 2026-10-27): a clear sideways swipe right on the
+  chat opens it, left on the menu closes it. Not an edge swipe — under gesture navigation the edge
+  is Android's Back. RN PanResponder on the bubble phase, so horizontal scrollers inside keep theirs.
+  Pass `useSwipe` a stable callback (useCallback): a new one rebuilds the responder mid-drag.
+- **Switching companion is a sheet** (`components/companion/switch-sheet.tsx`, 2026-10-27), on the
+  shared `BottomSheet`: every companion with her face; it replaced an `Alert` that held two names.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba
