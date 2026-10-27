@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clapperboard, Clock, Eye, Heart, Mic, Radio, SlidersHorizontal, Smile, Square, Trash2, UserRound, Volume2, VolumeX, Wrench } from 'lucide-react-native';
+import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, MoreHorizontal, RotateCcw, SlidersHorizontal, Smile, Square, UserRound, Volume2, Wrench, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { OncePhoto } from '@/components/companion/once-photo';
+import { ChatMenu } from '@/components/companion/chat-menu';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
 import { TouchButton } from '@/components/companion/touch-button';
@@ -42,6 +43,7 @@ import {
   streamCompanion,
   withEmote,
   withoutTag,
+  stopCompanion,
   touchLine,
   type CompanionTouch,
   type CompanionDial,
@@ -162,7 +164,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
-  const [sheet, setSheet] = useState<'memory' | 'diary' | 'switch' | null>(null);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'switch' | 'menu' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -457,6 +459,18 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The companions on the Mac, in the app's own sheet (components/companion/switch-sheet.tsx).
   const switchTo = () => setSheet('switch');
 
+  /** Stop her: the Mac cuts the reply where it is; the running stream then ends with those words. */
+  const stopHer = async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const { dropped } = await stopCompanion(lane);
+      if (dropped) ToastAndroid.show(`${dropped} photo${dropped > 1 ? 's' : ''} cancelled.`, ToastAndroid.SHORT);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e));
+    }
+    if (!stream.current) void sync();          // no stream to end by itself: read the chat back
+  };
+
   const toggleLive = () => {
     const on = !liveOn;
     liveMode.set(on);
@@ -547,52 +561,16 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             </Meta>
           </Pressable>
           {name !== null && lane === 'local' ? (
+            // Live, Director, voice and Clear live in one sheet (components/companion/chat-menu.tsx);
+            // a dot keeps Live or Director being on visible from the header.
             <PressableScale
-              onPress={toggleLive}
-              hitSlop={8}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: liveOn }}
-              accessibilityLabel="Live: a photo with every reply"
-              style={[styles.liveChip, liveOn ? styles.liveChipOn : null]}>
-              <Radio size={13} color={liveOn ? Palette.ground : Palette.muted} />
-              <Text style={[styles.liveChipText, liveOn ? styles.liveChipTextOn : null]}>Live</Text>
-            </PressableScale>
-          ) : null}
-          {name !== null && lane === 'local' ? (
-            <PressableScale
-              onPress={toggleDirector}
-              hitSlop={8}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: directing }}
-              accessibilityLabel="Director: pick each part of her photos"
-              style={[styles.liveChip, directing ? styles.liveChipOn : null]}>
-              <Clapperboard size={13} color={directing ? Palette.ground : Palette.muted} />
-            </PressableScale>
-          ) : null}
-          {name !== null && lane === 'local' && canSpeak() ? (
-            <PressableScale
-              onPress={() => {
-                void Haptics.selectionAsync();
-                voiceMode.set(!aloud);
-                setAloud(!aloud);
-                if (aloud) quiet();
-              }}
-              hitSlop={10}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: aloud }}
-              accessibilityLabel="Say her replies aloud"
-              style={styles.iconButton}>
-              {aloud ? <Volume2 size={16} color={ROSE} /> : <VolumeX size={16} color={Palette.muted} />}
-            </PressableScale>
-          ) : null}
-          {messages.length > 0 ? (
-            <PressableScale
-              onPress={forget}
+              onPress={() => setSheet('menu')}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel="Clear the chat"
+              accessibilityLabel="Chat settings"
               style={styles.iconButton}>
-              <Trash2 size={15} color={Palette.muted} />
+              <MoreHorizontal size={18} color={Palette.text} />
+              {liveOn || directing ? <View style={styles.menuDot} /> : null}
             </PressableScale>
           ) : null}
         </View>
@@ -686,7 +664,21 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                 </View>
               )
             ) : null}
-            {sendError ? <Meta style={styles.error}>{sendError}</Meta> : null}
+            {sendError ? (
+              // A visible chip, not a line at the end: the words are back in the box, so "Send again" resends them.
+              <View style={styles.errorChip}>
+                <Text style={styles.errorText}>{sendError}</Text>
+                {draft.trim() ? (
+                  <PressableScale onPress={() => void send()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Send again" style={styles.errorAction}>
+                    <RotateCcw size={14} color={ROSE} />
+                    <Text style={styles.errorActionText}>Send again</Text>
+                  </PressableScale>
+                ) : null}
+                <PressableScale onPress={() => setSendError(null)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss" style={styles.errorClose}>
+                  <X size={14} color={Palette.muted} />
+                </PressableScale>
+              </View>
+            ) : null}
           </ScrollView>
           {touches.length && !emoting ? (
             <TouchButton
@@ -717,6 +709,27 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'menu' && name ? (
+          <ChatMenu
+            name={name}
+            accent={ROSE}
+            live={liveOn}
+            directing={directing}
+            aloud={aloud}
+            canSpeak={canSpeak()}
+            canClear={messages.length > 0}
+            onLive={toggleLive}
+            onDirector={toggleDirector}
+            onAloud={() => {
+              void Haptics.selectionAsync();
+              voiceMode.set(!aloud);
+              setAloud(!aloud);
+              if (aloud) quiet();
+            }}
+            onClear={forget}
+            onClose={() => setSheet(null)}
+          />
+        ) : null}
         {sheet === 'switch' ? (
           <SwitchSheet
             lane={lane}
@@ -775,7 +788,16 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             editable={lane === 'local' && name !== null}
             accessibilityLabel="Message"
           />
-          {draft.trim() || !listening.available ? (
+          {live !== null || (coming?.queued ?? 0) > 0 ? (
+            // She is writing, or her photos wait in line: the button stops her (POST /companion/stop).
+            <PressableScale
+              onPress={() => void stopHer()}
+              accessibilityRole="button"
+              accessibilityLabel={`Stop ${name ?? 'her'}`}
+              style={[styles.send, styles.stop]}>
+              <Square size={14} color={Palette.ground} fill={Palette.ground} />
+            </PressableScale>
+          ) : draft.trim() || !listening.available ? (
             <PressableScale
               onPress={() => void send()}
               disabled={!draft.trim() || busy}
@@ -1042,6 +1064,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Palette.hairline,
   },
+  // Live or Director on, shown on the ⋯ button.
+  menuDot: { position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: 3, backgroundColor: ROSE },
+  stop: { backgroundColor: ROSE },
+  errorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+    alignSelf: 'center',
+    marginTop: Space.sm,
+    paddingVertical: Space.sm,
+    paddingLeft: Space.md,
+    paddingRight: Space.sm,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 113, 133, 0.4)',
+    backgroundColor: 'rgba(251, 113, 133, 0.08)',
+    maxWidth: '92%',
+  },
+  errorText: { flexShrink: 1, fontFamily: Font.ui, color: Palette.text, ...Type.small },
+  errorAction: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  errorActionText: { fontFamily: Font.uiMedium, color: ROSE, ...Type.small },
+  errorClose: { padding: 2 },
   iconButton: {
     width: 32,
     height: 32,
@@ -1125,7 +1169,6 @@ const styles = StyleSheet.create({
   action: { fontFamily: Font.voiceItalic, color: Palette.muted },
   // A sound she makes (ahh, mmm, huhh?!): her voice, not her words, so it leans and glows a little.
   sound: { fontFamily: Font.voiceItalic, color: ROSE, letterSpacing: 0.6 },
-  error: { color: Palette.alert, textAlign: 'center', marginTop: Space.sm },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Space.xl },
   centeredText: { textAlign: 'center', ...Type.small },
   composer: {
@@ -1153,19 +1196,6 @@ const styles = StyleSheet.create({
   },
   snapOn: { borderColor: ROSE },
   // The Live switch in the header: a quiet outline when off, filled when on.
-  liveChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Palette.hairline,
-  },
-  liveChipOn: { backgroundColor: ROSE, borderColor: ROSE },
-  liveChipText: { fontFamily: Font.ui, fontSize: 12, color: Palette.muted },
-  liveChipTextOn: { color: Palette.ground },
   // The camera button: outlined, so it reads as the quieter of the two round buttons.
   snap: {
     width: 42,

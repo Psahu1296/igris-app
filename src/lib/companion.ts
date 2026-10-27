@@ -353,6 +353,18 @@ export async function markSeen(lane: Lane, name: string): Promise<void> {
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
+/**
+ * Stop her (maestro POST /companion/stop): a reply still being written is cut where it is and
+ * kept, and her photos still waiting in line are dropped; a photo already drawing finishes.
+ * The running stream then ends by itself with what she had written.
+ */
+export async function stopCompanion(lane: Lane): Promise<{ stopped: boolean; dropped: number }> {
+  const res = await post(lane, whoPath('/companion/stop'), {});
+  if (res.status === 404) throw new CompanionRefused("This Mac's maestro is too old to stop her.");
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return (await res.json()) as { stopped: boolean; dropped: number };
+}
+
 /** Her diary, newest first. */
 export async function fetchDiary(lane: Lane): Promise<DiaryEntry[]> {
   const res = await authedFetch(lane, whoPath('/companion/diary'));

@@ -1,10 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { Check, Copy, Menu, Volume2, VolumeX } from 'lucide-react-native';
+import { Check, ChevronDown, Copy, Menu, Volume2, VolumeX } from 'lucide-react-native';
 import { useCallback, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/composer';
@@ -48,6 +49,7 @@ export default function Transcript() {
   const { turns, busy, history, ask, quickCall, confirmCall, confirmReply, cancelCall, nextStep } = useConversation();
   const [laneMenuOpen, setLaneMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
   const openMenu = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDrawerOpen(true);
@@ -178,7 +180,14 @@ export default function Transcript() {
           }}
           // Not "on-drag": that closed the keyboard on the first drag, so the
           // transcript could not be scrolled while typing. A tap outside or back closes it.
-          keyboardDismissMode="none">
+          keyboardDismissMode="none"
+          // More than a screen up from the latest: the jump-to-bottom button shows.
+          scrollEventThrottle={120}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const far = contentSize.height - (contentOffset.y + layoutMeasurement.height) > layoutMeasurement.height;
+            setScrolledUp((was) => (was === far ? was : far));
+          }}>
           {turns.length === 0 && history !== 'ready' ? (
             <Opening tint={lanePref} error={history === 'loading' ? null : history.error} />
           ) : turns.length === 0 ? (
@@ -205,6 +214,18 @@ export default function Transcript() {
             ))
           )}
         </ScrollView>
+        {scrolledUp ? (
+          <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={styles.toBottom}>
+            <PressableScale
+              onPress={() => scroller.current?.scrollToEnd({ animated: true })}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to the latest message"
+              style={[styles.toBottomButton, { borderColor: laneColor(lanePref) }]}>
+              <ChevronDown size={18} color={laneColor(lanePref)} />
+            </PressableScale>
+          </Animated.View>
+        ) : null}
         </View>
         </GestureDetector>
 
@@ -277,6 +298,16 @@ export default function Transcript() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Palette.ground },
   fill: { flex: 1 },
+  toBottom: { position: 'absolute', right: Space.lg, bottom: Space.md },
+  toBottomButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: Palette.ground,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
