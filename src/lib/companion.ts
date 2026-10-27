@@ -50,7 +50,24 @@ export type CompanionMessage = {
    * `image.seconds`. Missing on a text she sent with no words (a set's later photos) or a
    * maestro from before 2026-10-01. */
   took?: number;
+  /** His message she read and did not answer, sulking (maestro companion/tone.py). */
+  left_on_seen?: boolean;
 };
+
+/**
+ * Her chat's colour by her tone (maestro companion/tone.py `TONES`): rose by default, deep red
+ * when intimate, a cold blue while she sulks. Anything unknown falls back to rose.
+ */
+export const TONE_COLORS: Record<string, string> = {
+  neutral: '#FB7185',
+  flirty: '#F472B6',
+  intimate: '#E11D48',
+  afterglow: '#FB923C',
+  happy: '#FBBF24',
+  low: '#94A3B8',
+  sulking: '#60A5FA',
+};
+export const toneColor = (tone?: string) => TONE_COLORS[tone ?? 'neutral'] ?? TONE_COLORS.neutral;
 
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
 export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' };
@@ -134,7 +151,7 @@ export type Companion = {
   /** Missing on a maestro from before 2026-09-30. */
   pending?: CompanionPending | null;
   /** How she is right now (maestro companion/inner.py). Missing on an older maestro, like the two below. */
-  state?: { stage: string; mood: string; where: string };
+  state?: { stage: string; mood: string; where: string; tone?: string };
   /** The `at` of each message of hers he put a heart on. */
   liked?: string[];
   scenes?: CompanionScene[];
@@ -410,6 +427,8 @@ export type CompanionEvent =
   | { kind: 'retake' }
   /** She is busy: his message is saved and she answers later (`until`). No reply follows. */
   | { kind: 'away'; away: CompanionAway }
+  /** She read it and is not answering (sulking, maestro companion/tone.py). No reply follows. */
+  | { kind: 'seen' }
   /** After her words: a photo is being taken, its mflux steps, the photo, or why not. */
   | { kind: 'photoStarted' }
   | { kind: 'progress'; done: number; total: number }
@@ -543,6 +562,7 @@ export async function streamCompanion(opts: {
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
       else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message, seconds: data.seconds });
       else if (frame.event === 'retake') onEvent({ kind: 'retake' });
+      else if (frame.event === 'seen') onEvent({ kind: 'seen' });
       else if (frame.event === 'away' && data.until)
         onEvent({ kind: 'away', away: { until: data.until, reason: (data.message ?? '').replace(/^\S+ is /, '') || 'busy' } });
       else if (frame.event === 'photo_status') onEvent({ kind: 'photoStarted' });

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, MoreHorizontal, RotateCcw, SlidersHorizontal, Smile, Square, UserRound, Volume2, Wrench, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
@@ -44,6 +45,7 @@ import {
   withEmote,
   withoutTag,
   stopCompanion,
+  toneColor,
   touchLine,
   type CompanionTouch,
   type CompanionDial,
@@ -151,6 +153,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [face, setFaceName] = useState<string | null>(seen?.face ?? null);
   // Her mood and where she is, for the header; null before she has said (or on an older maestro).
   const [mood, setMood] = useState<string | null>(seen ? moodLine(seen) : null);
+  // Her tone (maestro companion/tone.py): the chat's glow and accents follow it.
+  const [tone, setTone] = useState<string | undefined>(seen?.state?.tone);
+  const accent = toneColor(tone);
   const [liked, setLiked] = useState<string[]>(seen?.liked ?? []);
   const [scenes, setScenes] = useState<CompanionScene[]>(seen?.scenes ?? []);
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
@@ -206,6 +211,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setModel(c.model);
         setFaceName(c.face);
         setMood(moodLine(c));
+        setTone(c.state?.tone);
         setLiked(c.liked ?? []);
         setScenes(c.scenes ?? []);
         setOutfits(c.outfits ?? []);
@@ -346,6 +352,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             words = '';
             felt = 0;
             setLive('');
+          } else if (event.kind === 'seen') {
+            // She read it and is not answering: the message shows "Seen", and nothing follows.
+            setLive(null);
+            setMessages((m) => m.map((msg) => (msg.at === at && msg.role === 'you' ? { ...msg, left_on_seen: true } : msg)));
           } else if (event.kind === 'away') {
             // Saved on the Mac, not answered yet: the header says why, and the idle look finds her reply.
             setLive(null);
@@ -536,6 +546,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={[styles.fill, { paddingBottom: bottomInset }]}>
+        {/* Her tone as a soft glow behind the header; a new tone fades in over the old. */}
+        <Animated.View key={tone ?? 'neutral'} entering={FadeIn.duration(700)} pointerEvents="none" style={[styles.glow, { backgroundColor: accent }]} />
         <View style={styles.header}>
           <PressableScale
             onPress={() => router.back()}
@@ -557,7 +569,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               {others.length ? <ChevronDown size={16} color={Palette.muted} /> : null}
             </View>
             <Meta numberOfLines={1}>
-              {snapping ? 'sending a photo…' : busy ? 'typing…' : (mood ?? (model ? `on ${model}` : ' '))}
+              {snapping ? 'sending a photo…' : busy ? 'typing…' : withPresence(mood ?? (model ? `on ${model}` : ''), messages)}
             </Meta>
           </Pressable>
           {name !== null && lane === 'local' ? (
@@ -619,6 +631,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
                   liked={liked.includes(m.at)}
                   onLike={m.role === 'her' && j === parts.length - 1 ? () => toggleLike(m.at) : undefined}
                   seconds={m.role === 'her' && j === parts.length - 1 ? m.took : undefined}
+                  ticks={m.role === 'you' && j === parts.length - 1 ? ticksFor(messages, i) : undefined}
+                  accent={accent}
                   speaking={speaking === m.at}
                   onSpeak={
                     m.role === 'her' && m.text && j === parts.length - 1 && canSpeak()
@@ -684,7 +698,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             <TouchButton
               touches={touches}
               disabled={busy}
-              accent={ROSE}
+              accent={accent}
               onTouch={(touch, taps) => void send({ touch: { touch, taps } })}
             />
           ) : null}
@@ -823,6 +837,23 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
 }
 
+/** ✓ saved on the Mac, ✓✓ she answered after it, Seen when she read it and did not answer. */
+function ticksFor(messages: CompanionMessage[], i: number): '✓' | '✓✓' | 'Seen' {
+  if (messages[i].left_on_seen) return 'Seen';
+  return messages.slice(i + 1).some((m) => m.role === 'her') ? '✓✓' : '✓';
+}
+
+/** Her mood line with when she was last here: "online" within 5 minutes of her last message, else the time. */
+function withPresence(line: string, messages: CompanionMessage[]): string {
+  const last = [...messages].reverse().find((m) => m.role === 'her');
+  if (!last) return line || ' ';
+  const at = new Date(last.at);
+  if (Number.isNaN(at.getTime())) return line || ' ';
+  const minutes = (Date.now() - at.getTime()) / 60_000;
+  const when = minutes < 5 ? 'online' : `last seen ${at.getHours() % 12 || 12}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return line ? `${line} · ${when}` : when;
+}
+
 function Bubble({
   lane,
   mine,
@@ -841,6 +872,8 @@ function Bubble({
   onSpeak,
   seconds,
   onDelete,
+  ticks,
+  accent = ROSE,
 }: {
   lane: Lane;
   mine: boolean;
@@ -867,6 +900,10 @@ function Bubble({
   /** How long her reply took to generate (maestro api/companion.py); the image has its
    * own time in `image.seconds`. Shown above the like/speak icons, her messages only. */
   seconds?: number;
+  /** Under his last bubble of a message: ✓ saved, ✓✓ she answered, Seen she read and did not. */
+  ticks?: '✓' | '✓✓' | 'Seen';
+  /** Her tone's colour (TONE_COLORS), for "Seen". */
+  accent?: string;
   /** Long-press this message to delete it, his or hers. */
   onDelete?: () => void;
 }) {
@@ -964,6 +1001,14 @@ function Bubble({
       ) : null}
     </Pressable>
   );
+  if (ticks) {
+    return (
+      <View style={styles.mineColumn}>
+        {bubble}
+        <Meta style={[styles.ticks, ticks === 'Seen' && { color: accent }]}>{ticks}</Meta>
+      </View>
+    );
+  }
   if (!onLike) return bubble;
   // The heart sits beside the bubble, in a row of its own: a child drawn outside its
   // parent's bounds gets no touches on Android.
@@ -1064,6 +1109,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Palette.hairline,
   },
+  // Her tone's glow: a wide soft dome behind the header.
+  glow: { position: 'absolute', top: -300, alignSelf: 'center', width: 520, height: 420, borderRadius: 260, opacity: 0.12 },
+  mineColumn: { alignItems: 'flex-end', gap: 2 },
+  ticks: { fontSize: 10, lineHeight: 12, color: Palette.faint, marginRight: 4 },
   // Live or Director on, shown on the ⋯ button.
   menuDot: { position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: 3, backgroundColor: ROSE },
   stop: { backgroundColor: ROSE },
