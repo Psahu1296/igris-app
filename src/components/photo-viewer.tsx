@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { Image, type ImageSource } from 'expo-image';
-import { X } from 'lucide-react-native';
+import { Hand, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -170,6 +170,13 @@ function Zoomable({
           </Animated.View>
         </>
       ) : null}
+      {spots && !touched ? (
+        // Nothing said a tap on her touches her, and he never found it (2026-10-28): said, until he does.
+        <Animated.View entering={FadeIn.delay(300).duration(400)} pointerEvents="none" style={styles.hint}>
+          <Hand size={14} color={accent} />
+          <Text style={styles.hintText}>Tap her anywhere to touch her</Text>
+        </Animated.View>
+      ) : null}
       <PressableScale onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
         <X size={18} color={Palette.text} />
       </PressableScale>
@@ -198,6 +205,19 @@ const styles = StyleSheet.create({
   },
   spotText: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.small },
   ground: { flex: 1, backgroundColor: 'rgba(5, 4, 9, 0.97)' },
+  hint: {
+    position: 'absolute',
+    bottom: Space.huge,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.sm,
+    borderRadius: 18,
+    backgroundColor: 'rgba(9, 8, 14, 0.75)',
+  },
+  hintText: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.small },
   close: {
     position: 'absolute',
     top: Space.xl + Space.lg,

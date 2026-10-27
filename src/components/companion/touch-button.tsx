@@ -23,7 +23,7 @@ const ICONS: Record<string, LucideIcon> = { Droplet, Feather, Flame, Hand, HandH
 /** Taps closer together than this are one touch, stronger (touch.line on the Mac). */
 const BURST_MS = 900;
 /** The intimate touches feel heavier under the thumb. */
-const HEAVY = new Set(['finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress']);
+const HEAVY = new Set(['finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress', 'push', 'spank']);
 
 /**
  * The floating button over her chat: tap to touch her, the way the moment allows

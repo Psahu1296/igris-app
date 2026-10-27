@@ -145,11 +145,12 @@ export class CompanionRefused extends Error {}
  * A way he can touch her right now (maestro companion/touch.py): the floating button. The Mac
  * decides which fit the moment; `lines` is his action for one tap, a few, and a burst.
  */
-export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] };
+export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] | [string, string, string, string] };
 
 /** His action for a burst of taps, the same thresholds as touch.line on the Mac. */
 export const touchLine = (touch: CompanionTouch, taps: number) =>
-  taps <= 1 ? touch.lines[0] : taps <= 3 ? touch.lines[1] : touch.lines[2];
+  // maestro touch.grade: 1, 2-3, 4+ — or with a fourth line (push during sex): 1, 2-3, 4-5, 6+.
+  taps <= 1 ? touch.lines[0] : taps <= 3 ? touch.lines[1] : taps <= 5 ? touch.lines[2] : (touch.lines[3] ?? touch.lines[2]);
 
 /** One of the companions on the Mac (maestro companion/profiles.py), for the picker. */
 export type CompanionListing = { id: string; name: string; age: number; face: string | null; busy: boolean };
