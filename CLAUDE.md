@@ -481,10 +481,10 @@ released with no underruns. Download to speech took under 20s on 5G.
   name + mood line + online/last seen, and one ⋯ (`components/companion/chat-menu.tsx`: Live,
   Director, read aloud, Clear; a dot when Live or Director is on). While she writes or photos wait,
   send becomes ■ (`stopCompanion` → POST `/companion/stop`). A failed send is a chip with "Send
-  again". Her `state.tone` colours a glow behind the header and the touch button (`TONE_COLORS`);
+  again". Her `state.tone` colours a gradient wash behind the header and status bar (react-native-svg; a circle's edge cut across messages) and the touch button (`TONE_COLORS`);
   his bubbles carry ✓ / ✓✓ / "Seen" (`left_on_seen`, maestro tone.py). Gifts are a tray tab
   (`gifts`, POST `/companion/gift`); wearable ones come back under Outfits. Stories: a ring on her
-  avatar (tap = watch, hold = her page), `components/companion/story-viewer.tsx`, a reply is a
+  avatar (tap = watch while one is new, else tap = her page and hold = watch; both are also rows in ⋯), `components/companion/story-viewer.tsx`, a reply is a
   message with `story`. Her photos full screen: a tap shows `touch_spots` at the finger
   (`PhotoViewer` `spots`/`onTouch`) and sends that touch. Her latest message may carry `choices`
   (buttons: a string is sent as his message, {label, touch} as that touch) — games and her first

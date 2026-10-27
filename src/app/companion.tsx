@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { DiarySheet } from '@/components/companion/diary-sheet';
@@ -587,9 +588,22 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
+      {/* Her tone as a wash under the header that fades to nothing; a new tone fades in over
+          the old. A gradient, not a blurred circle: RN has no blur, and the circle's edge
+          cut across her messages. Behind the status bar too, so it has no top edge. */}
+      <Animated.View key={tone ?? 'neutral'} entering={FadeIn.duration(700)} pointerEvents="none" style={styles.glow}>
+        <Svg width="100%" height="100%">
+          <Defs>
+            <LinearGradient id="tone" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={accent} stopOpacity={0.16} />
+              <Stop offset="0.45" stopColor={accent} stopOpacity={0.06} />
+              <Stop offset="1" stopColor={accent} stopOpacity={0} />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#tone)" />
+        </Svg>
+      </Animated.View>
       <View style={[styles.fill, { paddingBottom: bottomInset }]}>
-        {/* Her tone as a soft glow behind the header; a new tone fades in over the old. */}
-        <Animated.View key={tone ?? 'neutral'} entering={FadeIn.duration(700)} pointerEvents="none" style={[styles.glow, { backgroundColor: accent }]} />
         <View style={styles.header}>
           <PressableScale
             onPress={() => router.back()}
@@ -829,6 +843,15 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             aloud={aloud}
             canSpeak={canSpeak()}
             canClear={messages.length > 0}
+            stories={storyCount.count}
+            onPage={() => {
+              setSheet(null);
+              router.push('/companion-profile');
+            }}
+            onStories={() => {
+              setSheet(null);
+              void openStories();
+            }}
             onLive={toggleLive}
             onDirector={toggleDirector}
             onAloud={() => {
@@ -1186,14 +1209,16 @@ function Avatar({ lane, face, ring, onStories }: { lane: Lane; face: string | nu
       live = false;
     };
   }, [lane, face]);
-  // Her page (companion-profile.tsx): the full-screen photo moved there, on her big face.
+  // A new story opens on a tap, like a status app; once they are seen a tap is her page
+  // (companion-profile.tsx) again and holding replays them. Tap-always-stories hid her page.
+  const page = () => router.push('/companion-profile');
   return (
     <PressableScale
-      onPress={() => (ring ? onStories() : router.push('/companion-profile'))}
-      onLongPress={() => router.push('/companion-profile')}
+      onPress={ring === 'unseen' ? onStories : page}
+      onLongPress={ring === 'unseen' ? page : ring ? onStories : page}
       hitSlop={6}
       accessibilityRole="button"
-      accessibilityLabel={ring ? 'Her stories (hold for her page)' : 'Her page'}
+      accessibilityLabel={ring === 'unseen' ? 'Her new stories (hold for her page)' : ring ? 'Her page (hold for her stories)' : 'Her page'}
       style={[styles.avatar, ring === 'unseen' ? styles.ringUnseen : ring === 'seen' ? styles.ringSeen : null]}>
       {face && source ? (
         <Image source={source} style={styles.avatarImage} contentFit="cover" />
@@ -1228,7 +1253,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Palette.hairline,
   },
   // Her tone's glow: a wide soft dome behind the header.
-  glow: { position: 'absolute', top: -300, alignSelf: 'center', width: 520, height: 420, borderRadius: 260, opacity: 0.12 },
+  glow: { position: 'absolute', top: 0, left: 0, right: 0, height: 240 },
   mineColumn: { alignItems: 'flex-end', gap: 2 },
   ticks: { fontSize: 10, lineHeight: 12, color: Palette.faint, marginRight: 4 },
   // Live or Director on, shown on the ⋯ button.
