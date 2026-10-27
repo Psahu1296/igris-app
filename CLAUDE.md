@@ -475,6 +475,9 @@ released with no underruns. Download to speech took under 20s on 5G.
   GestureHandlerRootView at the root and inside the drawer's Modal. **Not RN's PanResponder**: a
   PanResponder View around the chat's ScrollView stopped the chat scrolling on the phone (shipped
   and reverted the same evening). Pass `useSwipe` a stable callback (useCallback).
+- **Roleplay tab + try-on** (2026-10-27): the tray's Roleplay tab shows the `scenes` of kind
+  `roleplay` the Mac offers now (it filters by her mood and stage); the Outfits tab's first chips are
+  "Try-on" / "Bold try-on", plain outfit ids to the same route. Her page maps the `shirt` icon. JS only.
 - **The Director opens on the scene** (`components/companion/director-sheet.tsx`, 2026-10-27): "now:"
   is maestro's scene-derived default, each text row shows `suggest` chips (fit the scene) before the
   fixed ones, "Fill from the moment" (POST `/companion/director/moment`, ~10–20 s) fills every chip

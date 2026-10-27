@@ -91,7 +91,7 @@ export const TONE_COLORS: Record<string, string> = {
 export const toneColor = (tone?: string) => TONE_COLORS[tone ?? 'neutral'] ?? TONE_COLORS.neutral;
 
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
-export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' };
+export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' | 'roleplay' };
 
 /** Tonight's dial (maestro companion/dial.py): how he wants a scene to go, and who leads. */
 export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch' };

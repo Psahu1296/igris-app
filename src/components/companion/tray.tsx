@@ -9,10 +9,11 @@ import { LEADS, MY_EMOTES, PACES, type CompanionDial, type CompanionGift, type C
 /** Icon names the Mac may send for a gift (maestro companion/gifts.py `icon`); unknown → a gift box. */
 const GIFT_ICONS: Record<string, LucideIcon> = { Candy, Flame, Flower, Gem, PawPrint, Shirt, SprayCan };
 
-type Tab = 'actions' | 'scenes' | 'outfits' | 'gifts' | 'tonight' | 'more';
+type Tab = 'actions' | 'scenes' | 'roleplay' | 'outfits' | 'gifts' | 'tonight' | 'more';
 const TABS: { id: Tab; title: string }[] = [
   { id: 'actions', title: 'Actions' },
   { id: 'scenes', title: 'Scenes' },
+  { id: 'roleplay', title: 'Roleplay' },
   { id: 'outfits', title: 'Outfits' },
   { id: 'gifts', title: 'Gifts' },
   { id: 'tonight', title: 'Tonight' },
@@ -22,7 +23,9 @@ const TABS: { id: Tab; title: string }[] = [
 /**
  * The tray above the message box, opened by the smile button: what he can do besides
  * typing, one row at a time. Actions: his own (*hugs you*), added to the draft. Scenes:
- * scene cards and games she opens. Outfits: what she wears, which she puts on and shows.
+ * scene cards and games she opens. Roleplay: characters she plays until he stops — the Mac
+ * lists only those the moment allows, those that suit her mood first. Outfits: what she
+ * wears, which she puts on and shows, and a try-on of three looks.
  * Tonight: how he wants a scene to go and who leads. More: send her a photo, her memory,
  * her diary. The lists come from the Mac (empty on an older maestro).
  */
@@ -74,6 +77,7 @@ export function CompanionTray({
       <Text style={[opts.italic ? styles.emoteText : styles.chipText, opts.selected ? styles.onText : null]}>{title}</Text>
     </PressableScale>
   );
+  const roleplays = scenes.filter((scene) => scene.kind === 'roleplay');
   const pace = dial?.pace ?? 2;
   const lead = dial?.lead ?? 'switch';
 
@@ -88,7 +92,12 @@ export function CompanionTray({
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.row}>
         {tab === 'actions' ? MY_EMOTES.map((emote) => chip(emote, emote, () => onEmote(emote), { italic: true })) : null}
-        {tab === 'scenes' ? scenes.map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true })) : null}
+        {tab === 'scenes'
+          ? scenes.filter((scene) => scene.kind !== 'roleplay').map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true }))
+          : null}
+        {tab === 'roleplay'
+          ? roleplays.map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true }))
+          : null}
         {tab === 'outfits' ? outfits.map((outfit) => chip(outfit.id, outfit.title, () => onOutfit(outfit), { starts: true })) : null}
         {tab === 'gifts'
           ? gifts.map((gift) => {
@@ -113,6 +122,9 @@ export function CompanionTray({
         ) : null}
         {(tab === 'scenes' && scenes.length === 0) || (tab === 'outfits' && outfits.length === 0) || (tab === 'gifts' && gifts.length === 0) ? (
           <Text style={styles.none}>This needs a newer maestro on the Mac.</Text>
+        ) : null}
+        {tab === 'roleplay' && scenes.length > 0 && roleplays.length === 0 ? (
+          <Text style={styles.none}>Not now — she is upset, or the mood is not there yet.</Text>
         ) : null}
       </ScrollView>
     </View>

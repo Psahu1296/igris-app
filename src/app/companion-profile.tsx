@@ -1,26 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import {
-  BookHeart,
-  Brain,
-  CalendarHeart,
-  ChevronLeft,
-  ChevronRight,
-  CloudRain,
-  Flame,
-  Flower2,
-  Heart,
-  Images,
-  MapPin,
-  Moon,
-  Quote,
-  Smile,
-  Sparkles,
-  Sprout,
-  Trash2,
-  type LucideIcon,
-} from 'lucide-react-native';
+import { BookHeart, Brain, CalendarHeart, ChevronLeft, ChevronRight, CloudRain, Flame, Flower2, Heart, Images, type LucideIcon, MapPin, Moon, Quote, Shirt, Smile, Sparkles, Sprout, Trash2 } from 'lucide-react-native';
 import { createElement, useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -72,6 +53,7 @@ const ICONS: Record<string, LucideIcon> = {
   book: BookHeart,
   brain: Brain,
   'map-pin': MapPin,
+  shirt: Shirt,
 };
 
 /** The icon the Mac named, drawn by a component that stays the same between renders. */
