@@ -47,6 +47,7 @@ import {
   stopCompanion,
   toneColor,
   touchLine,
+  type CompanionGift,
   type CompanionTouch,
   type CompanionDial,
   type CompanionListing,
@@ -90,6 +91,8 @@ type Turn = {
   view?: PhotoView;
   /** A touch from the floating button and how many taps the burst had. */
   touch?: { touch: CompanionTouch; taps: number };
+  /** A gift from the tray. */
+  gift?: CompanionGift;
 };
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
@@ -161,6 +164,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
+  const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
   const [dial, setDialState] = useState<CompanionDial | null>(seen?.dial ?? null);
   // The open-once photos he has opened; the Mac keeps the list.
   const [opened, setOpened] = useState<string[]>(seen?.seen ?? []);
@@ -216,6 +220,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setScenes(c.scenes ?? []);
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
+        setGifts(c.gifts ?? []);
         setDialState(c.dial ?? null);
         setOpened(c.seen ?? []);
         setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
@@ -289,7 +294,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
    */
   const send = useCallback(async (turn: Turn = {}) => {
     const text =
-      turn.snap || turn.view || turn.touch || turn.scene !== undefined || turn.outfit !== undefined ? undefined : draft.trim();
+      turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
+        ? undefined
+        : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -305,6 +312,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     }
     // A touch is saved on the Mac as his action; shown at once, the same line the Mac keeps.
     if (turn.touch) setMessages((m) => [...m, { role: 'you', text: touchLine(turn.touch!.touch, turn.touch!.taps), at }]);
+    if (turn.gift) setMessages((m) => [...m, { role: 'you', text: turn.gift!.line, at }]);
     setLive('');
     let words = '';
     let felt = 0;
@@ -335,6 +343,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         scene: turn.scene,
         outfit: turn.outfit,
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps } : undefined,
+        gift: turn.gift?.id,
         view: turn.view,
         live: liveOn,
         signal: controller.signal,
@@ -711,10 +720,12 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             outfits={outfits}
             dial={dial}
             busy={busy}
-            accent={ROSE}
+            accent={accent}
             onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
             onScene={(scene) => void send({ scene: scene.id })}
             onOutfit={(outfit) => void send({ outfit: outfit.id })}
+            gifts={gifts}
+            onGift={(gift) => void send({ gift })}
             onDial={turnDial}
             onPhoto={(source) => void sendPhoto(source)}
             onMemory={() => setSheet('memory')}

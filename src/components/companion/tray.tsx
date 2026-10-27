@@ -1,16 +1,20 @@
-import { BookHeart, Brain, Camera, ImagePlus } from 'lucide-react-native';
+import { BookHeart, Brain, Camera, Candy, Flame, Flower, Gem, Gift, ImagePlus, PawPrint, Shirt, SprayCan, type LucideIcon } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { Font, Gutter, Palette, Space } from '@/constants/theme';
-import { LEADS, MY_EMOTES, PACES, type CompanionDial, type CompanionOutfit, type CompanionScene } from '@/lib/companion';
+import { LEADS, MY_EMOTES, PACES, type CompanionDial, type CompanionGift, type CompanionOutfit, type CompanionScene } from '@/lib/companion';
 
-type Tab = 'actions' | 'scenes' | 'outfits' | 'tonight' | 'more';
+/** Icon names the Mac may send for a gift (maestro companion/gifts.py `icon`); unknown → a gift box. */
+const GIFT_ICONS: Record<string, LucideIcon> = { Candy, Flame, Flower, Gem, PawPrint, Shirt, SprayCan };
+
+type Tab = 'actions' | 'scenes' | 'outfits' | 'gifts' | 'tonight' | 'more';
 const TABS: { id: Tab; title: string }[] = [
   { id: 'actions', title: 'Actions' },
   { id: 'scenes', title: 'Scenes' },
   { id: 'outfits', title: 'Outfits' },
+  { id: 'gifts', title: 'Gifts' },
   { id: 'tonight', title: 'Tonight' },
   { id: 'more', title: 'More' },
 ];
@@ -25,12 +29,14 @@ const TABS: { id: Tab; title: string }[] = [
 export function CompanionTray({
   scenes,
   outfits,
+  gifts = [],
   dial,
   busy,
   accent,
   onEmote,
   onScene,
   onOutfit,
+  onGift,
   onDial,
   onPhoto,
   onMemory,
@@ -38,6 +44,8 @@ export function CompanionTray({
 }: {
   scenes: CompanionScene[];
   outfits: CompanionOutfit[];
+  /** What he can give her now; she reacts, keeps it, and wears what is to wear. */
+  gifts?: CompanionGift[];
   dial: CompanionDial | null;
   /** She is answering: nothing that starts a turn can be tapped. */
   busy: boolean;
@@ -45,6 +53,7 @@ export function CompanionTray({
   onEmote: (emote: string) => void;
   onScene: (scene: CompanionScene) => void;
   onOutfit: (outfit: CompanionOutfit) => void;
+  onGift?: (gift: CompanionGift) => void;
   onDial: (dial: CompanionDial) => void;
   onPhoto: (source: 'camera' | 'library') => void;
   onMemory: () => void;
@@ -81,6 +90,12 @@ export function CompanionTray({
         {tab === 'actions' ? MY_EMOTES.map((emote) => chip(emote, emote, () => onEmote(emote), { italic: true })) : null}
         {tab === 'scenes' ? scenes.map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true })) : null}
         {tab === 'outfits' ? outfits.map((outfit) => chip(outfit.id, outfit.title, () => onOutfit(outfit), { starts: true })) : null}
+        {tab === 'gifts'
+          ? gifts.map((gift) => {
+              const Icon = GIFT_ICONS[gift.icon] ?? Gift;
+              return chip(gift.id, gift.label, () => onGift?.(gift), { starts: true, icon: <Icon size={14} color={accent} /> });
+            })
+          : null}
         {tab === 'tonight' ? (
           <>
             {PACES.map((title, i) => chip(`pace-${i}`, title, () => onDial({ pace: i, lead }), { selected: dial !== null && pace === i }))}
@@ -96,7 +111,7 @@ export function CompanionTray({
             {chip('diary', 'Her diary', onDiary, { icon: <BookHeart size={14} color={accent} /> })}
           </>
         ) : null}
-        {(tab === 'scenes' && scenes.length === 0) || (tab === 'outfits' && outfits.length === 0) ? (
+        {(tab === 'scenes' && scenes.length === 0) || (tab === 'outfits' && outfits.length === 0) || (tab === 'gifts' && gifts.length === 0) ? (
           <Text style={styles.none}>This needs a newer maestro on the Mac.</Text>
         ) : null}
       </ScrollView>

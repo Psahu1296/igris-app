@@ -86,6 +86,9 @@ export type CompanionAway = { until: string; reason: string };
 
 export type CompanionOutfit = { id: string; title: string };
 
+/** A gift he can give her now (maestro companion/gifts.py); `line` is his action as the Mac saves it. */
+export type CompanionGift = { id: string; label: string; icon: string; line: string };
+
 export type DiaryEntry = { date: string; text: string };
 
 /** One thing she has written down about the two of them (maestro companion/memory.py). */
@@ -166,6 +169,8 @@ export type Companion = {
   photos?: CompanionPhotosComing | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
+  /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */
+  gifts?: CompanionGift[];
 };
 
 /** Photos queued on the Mac: drawn one by one while the chat goes on. */
@@ -473,6 +478,8 @@ export async function streamCompanion(opts: {
   outfit?: string;
   /** He touches her (POST /companion/touch): a touch's id and how many taps in the burst. */
   touch?: { id: string; taps: number };
+  /** He gives her a gift (POST /companion/gift): its id. */
+  gift?: string;
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   /** One of her photos again from his eyes or hers (maestro POST /companion/view): no words,
@@ -481,7 +488,7 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, live = false, view, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card =
     scene !== undefined
@@ -490,7 +497,9 @@ export async function streamCompanion(opts: {
         ? { path: 'outfit', id: outfit }
         : touch !== undefined
           ? { path: 'touch', id: touch.id, taps: touch.taps }
-          : null;
+          : gift !== undefined
+            ? { path: 'gift', id: gift }
+            : null;
   const snap = !card && !view && message === undefined && image === undefined;
   const path = view ? 'view' : card ? card.path : snap ? 'snap' : 'stream';
   const body = view
