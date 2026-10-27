@@ -649,10 +649,12 @@ export type DirectorField = {
 export type Direction = Record<string, string>;
 export type Director = {
   fields: DirectorField[];
-  /** What he pinned: it holds for every directed photo until cleared. */
+  /** What he pinned: it holds while the scene it was made in lasts (same place, no session break). */
   pins: Direction;
-  /** What each empty field is right now. */
+  /** What each empty field is right now: the scene, as her state has it. */
   defaults: Direction;
+  /** Chips that fit the scene, per text field, shown before the fixed ones (older Macs: absent). */
+  suggest?: Record<string, string[]>;
   /** Fault chips for correcting a photo. */
   faults: { id: string; label: string }[];
 };
@@ -672,6 +674,13 @@ export async function fetchDirector(lane: Lane): Promise<Director> {
   const res = await authedFetch(lane, whoPath('/companion/director'));
   if (!res.ok) throw new Error(await refused(res, "This Mac's maestro is too old for the director."));
   return (await res.json()) as Director;
+}
+
+/** The moment as the Mac would plan its photo (one call on her model, ~10–20 s): chips to change. */
+export async function directorFromMoment(lane: Lane): Promise<Direction> {
+  const res = await post(lane, whoPath('/companion/director/moment'), {});
+  if (!res.ok) throw new Error(await refused(res, "This Mac's maestro is too old to plan from the moment."));
+  return ((await res.json()) as { direction: Direction }).direction;
 }
 
 export type DirectRequest = {

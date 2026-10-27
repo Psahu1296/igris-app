@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { ChevronDown, ChevronUp, Pin, PinOff } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Pin, PinOff, Sparkles } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -11,6 +11,7 @@ import { Font, Gutter, Palette, Space } from '@/constants/theme';
 import {
   clearDirection,
   correctPhoto,
+  directorFromMoment,
   directPhoto,
   fetchDirector,
   previewDirection,
@@ -27,9 +28,11 @@ const COUNTS = [1, 2, 3, 4];
 
 /**
  * The photo director: a row of chips (and a box, for words) per part of the photo. Opens
- * on what he pinned, or on one photo's own choices with `like` — "same photo, change one
- * thing", drawn with that photo's seed. An empty field is whatever it is right now on the
- * Mac (shown as the box's placeholder). The prompt his choices make is shown as he picks.
+ * on what he pinned in this scene, or on one photo's own choices with `like` — "same photo,
+ * change one thing", drawn with that photo's seed. An empty field is the scene as it is on
+ * the Mac (shown as "now:"), and each row offers the chips that fit the scene first.
+ * "Fill from the moment" asks the Mac to plan the moment like the camera button would and
+ * fills every chip with it. The prompt his choices make is shown as he picks.
  */
 export function DirectorSheet({
   lane,
@@ -54,6 +57,7 @@ export function DirectorSheet({
   const [preview, setPreview] = useState<{ prompt: string; notes: string[] } | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [sending, setSending] = useState(false);
+  const [filling, setFilling] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -112,6 +116,19 @@ export function DirectorSheet({
     }
   };
 
+  const fillFromMoment = async () => {
+    void Haptics.selectionAsync();
+    setFilling(true);
+    setError(null);
+    try {
+      setChoice(await directorFromMoment(lane));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFilling(false);
+    }
+  };
+
   const clearAll = async () => {
     setChoice({});
     try {
@@ -134,10 +151,22 @@ export function DirectorSheet({
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+            <View style={styles.wrap}>
+              <Chip
+                title={filling ? 'Reading the moment…' : 'Fill from the moment'}
+                accent={accent}
+                icon={<Sparkles size={12} color={Palette.muted} />}
+                onPress={() => (filling ? undefined : void fillFromMoment())}
+              />
+            </View>
+            {!like && Object.keys(director.pins).length && choice === director.pins ? (
+              <Meta style={styles.note}>Your pin from this scene.</Meta>
+            ) : null}
             {director.fields.filter(shown).map((f) => (
               <FieldRow
                 key={f.id}
                 field={f}
+                suggested={director.suggest?.[f.id] ?? []}
                 value={choice[f.id] ?? ''}
                 now={director.defaults[f.id] ?? ''}
                 accent={accent}
@@ -153,7 +182,7 @@ export function DirectorSheet({
                   <Chip key={n} title={String(n)} selected={count === n} accent={accent} onPress={() => setCount(n)} />
                 ))}
                 <Chip
-                  title={pin ? 'Pinned for next time' : 'Just this once'}
+                  title={pin ? 'Pin for this scene' : 'Just this once'}
                   selected={pin}
                   accent={accent}
                   icon={pin ? <Pin size={12} color={Palette.ground} /> : <PinOff size={12} color={Palette.muted} />}
@@ -194,6 +223,7 @@ export function DirectorSheet({
 
 function FieldRow({
   field,
+  suggested,
   value,
   now,
   accent,
@@ -201,6 +231,8 @@ function FieldRow({
   onType,
 }: {
   field: DirectorField;
+  /** Chips that fit the scene, before the field's fixed ones. */
+  suggested: string[];
   value: string;
   now: string;
   accent: string;
@@ -208,6 +240,8 @@ function FieldRow({
   onType: (value: string) => void;
 }) {
   const nowLabel = field.choices.find((c) => c.value === now)?.label ?? now;
+  const fixed = new Set(suggested);
+  const chips = [...suggested.map((v) => ({ value: v, label: v })), ...field.choices.filter((c) => !fixed.has(c.value))];
   return (
     <View style={styles.section}>
       <View style={styles.labelRow}>
@@ -218,9 +252,9 @@ function FieldRow({
           </Meta>
         ) : null}
       </View>
-      {field.choices.length ? (
+      {chips.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} keyboardShouldPersistTaps="handled">
-          {field.choices.map((c) => (
+          {chips.map((c) => (
             <Chip key={c.value} title={c.label} selected={value === c.value} accent={accent} onPress={() => onChange(value === c.value ? '' : c.value)} />
           ))}
         </ScrollView>
