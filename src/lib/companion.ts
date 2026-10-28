@@ -97,7 +97,7 @@ export const toneColor = (tone?: string) => TONE_COLORS[tone ?? 'neutral'] ?? TO
 export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' | 'roleplay'; emoji?: string; about?: string };
 
 /** Tonight's dial (maestro companion/dial.py): how he wants a scene to go, and who leads. */
-export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch' };
+export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch'; talk?: 'sweet' | 'bold' | 'filthy' };
 export const PACES = ['Tender', 'Slow burn', 'Playful', 'Intense', 'Wild'];
 /** What each pace does to an intimate scene, for the tray's Tonight tab — the same as maestro dial.PACE says to her. */
 export const PACE_NOTES = [
@@ -107,6 +107,13 @@ export const PACE_NOTES = [
   'Hungry and bold, she drives it',
   'Bold, nothing held back',
 ];
+/** How she talks (maestro dial.TALK), apart from the pace. */
+export const TALKS = [
+  { id: 'sweet', title: 'Sweet' },
+  { id: 'bold', title: 'Bold' },
+  { id: 'filthy', title: 'Filthy' },
+] as const;
+
 export const LEADS: { id: CompanionDial['lead']; title: string }[] = [
   { id: 'her', title: 'She leads' },
   { id: 'him', title: 'You lead' },

@@ -434,6 +434,12 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           } else if (event.kind === 'reply') {
             if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt, took: event.seconds, voice: event.voice }]);
             if (event.text && voiceMode.get()) speak(herAt, event.text);
+            // Her moans in your hand: one beat per push, in the rhythm she makes them (maestro touch.moans).
+            if (turn.touch && (turn.touch.touch.id === 'push' || turn.touch.touch.id === 'deep-push')) {
+              for (let i = 0; i < Math.min(turn.touch.taps, 8); i++) {
+                setTimeout(() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), i * 320);
+              }
+            }
             setLive(null);
           } else if (event.kind === 'photoStarted') {
             setSnapping({ done: 0, total: 0 });

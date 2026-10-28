@@ -26,6 +26,7 @@ import {
   MY_EMOTES,
   PACE_NOTES,
   PACES,
+  TALKS,
   type CompanionDial,
   type CompanionGift,
   type CompanionOutfit,
@@ -195,7 +196,7 @@ export function CompanionTray({
               return (
                 <PressableScale
                   key={title}
-                  onPress={tap(() => onDial({ pace: i, lead }))}
+                  onPress={tap(() => onDial({ pace: i, lead, talk: dial?.talk }))}
                   accessibilityRole="button"
                   accessibilityState={{ selected: on }}
                   accessibilityLabel={`${title}: ${PACE_NOTES[i]}`}
@@ -206,6 +207,22 @@ export function CompanionTray({
             })}
           </View>
           <Text style={styles.dialNote}>{dial ? PACE_NOTES[pace] : 'Not set: she goes by the moment.'}</Text>
+          <View style={styles.leadRow}>
+            {TALKS.map((t) => {
+              const on = dial?.talk === t.id;
+              return (
+                <PressableScale
+                  key={t.id}
+                  onPress={tap(() => onDial({ pace, lead, talk: on ? undefined : t.id }))}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Her words: ${t.title}`}
+                  style={[styles.lead, on && { borderColor: accent, backgroundColor: 'rgba(251, 113, 133, 0.14)' }]}>
+                  <Text style={[styles.pillText, on && { color: accent }]}>{t.title}</Text>
+                </PressableScale>
+              );
+            })}
+          </View>
           {onToy ? (
             <PressableScale onPress={tap(onToy)} accessibilityRole="button" style={[styles.lead, styles.prefs]}>
               <Text style={[styles.pillText, { color: accent }]}>🎛️ Her toy — you hold the remote</Text>
@@ -222,7 +239,7 @@ export function CompanionTray({
               return (
                 <PressableScale
                   key={l.id}
-                  onPress={tap(() => onDial({ pace, lead: l.id }))}
+                  onPress={tap(() => onDial({ pace, lead: l.id, talk: dial?.talk }))}
                   accessibilityRole="button"
                   accessibilityState={{ selected: on }}
                   style={[styles.lead, on && { borderColor: accent, backgroundColor: 'rgba(251, 113, 133, 0.14)' }]}>
