@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { BookHeart, Brain, CalendarHeart, ChevronLeft, ChevronRight, CloudRain, Flame, Flower2, Heart, Images, type LucideIcon, MapPin, Moon, Quote, Shirt, Smile, Sparkles, Sprout, Trash2 } from 'lucide-react-native';
+import { BookHeart, Brain, CalendarHeart, ChevronLeft, ChevronRight, CloudRain, Droplet, Flame, Flower2, Heart, Images, Lock, type LucideIcon, MapPin, Moon, Quote, Shirt, Smile, Sparkles, Sprout, Star, Trash2, Trophy } from 'lucide-react-native';
 import { createElement, useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,6 +31,9 @@ import { useSession } from '@/state/session';
 
 type Source = { uri: string; headers: Record<string, string> };
 
+/** The calendar's warmth per level: silent, talked, flirty, an intimate night. */
+const HEAT = ['rgba(255,255,255,0.05)', 'rgba(251,113,133,0.22)', 'rgba(251,113,133,0.5)', '#FB7185'];
+
 /** Her second colour: the warm end of every gradient on her page. */
 const PEACH = '#FDBA74';
 /** Subtle warm champagne gold highlight for top-tier accents. */
@@ -54,6 +57,10 @@ const ICONS: Record<string, LucideIcon> = {
   brain: Brain,
   'map-pin': MapPin,
   shirt: Shirt,
+  droplet: Droplet,
+  trophy: Trophy,
+  lock: Lock,
+  star: Star,
 };
 
 /** The icon the Mac named, drawn by a component that stays the same between renders. */
@@ -607,6 +614,52 @@ function Card({ card }: { card: ProfileCard }) {
     );
   }
 
+  if (card.kind === 'calendar') {
+    // A heatmap of the last weeks, oldest first, seven to a row (warmer = closer).
+    return (
+      <View style={[styles.card, styles.full]}>
+        <View style={styles.cardTitleRow}>
+          <View style={styles.badgeSmall}>
+            <Glyph id={card.icon} size={13} color={ROSE} />
+          </View>
+          <Text style={styles.cardTitle}>{card.title}</Text>
+        </View>
+        <View style={styles.heatGrid}>
+          {card.value.map((day) => (
+            <View key={day.date} style={[styles.heatDay, { backgroundColor: HEAT[Math.max(0, Math.min(3, day.level))] }]} />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (card.kind === 'badges') {
+    return (
+      <View style={[styles.card, styles.full]}>
+        <View style={styles.cardTitleRow}>
+          <View style={styles.badgeSmall}>
+            <Glyph id={card.icon} size={13} color={ROSE} />
+          </View>
+          <Text style={styles.cardTitle}>
+            {card.title} · {card.value.filter((b) => b.got).length}/{card.value.length}
+          </Text>
+        </View>
+        <View style={styles.badgeGrid}>
+          {card.value.map((b) => (
+            <View key={b.id} style={[styles.badgeCell, !b.got && styles.badgeLocked]}>
+              <View style={[styles.badgeMedal, b.got && styles.badgeMedalGot]}>
+                <Glyph id={b.icon} size={18} color={b.got ? ROSE : Palette.faint} />
+              </View>
+              <Text style={[styles.badgeName, !b.got && { color: Palette.faint }]} numberOfLines={2}>
+                {b.title}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.card, styles.full, styles.quoteCard]}>
       <View style={styles.quoteAccentBar} />
@@ -1105,6 +1158,23 @@ const styles = StyleSheet.create({
   },
 
   /* Quote Card */
+  heatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: Space.sm },
+  heatDay: { width: '12.4%', aspectRatio: 1, borderRadius: 5 },
+  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, marginTop: Space.sm },
+  badgeCell: { width: '30.5%', alignItems: 'center', gap: 6, paddingVertical: Space.sm },
+  badgeLocked: { opacity: 0.5 },
+  badgeMedal: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+    backgroundColor: Palette.surfaceGlass,
+  },
+  badgeMedalGot: { borderColor: 'rgba(251, 113, 133, 0.5)', backgroundColor: 'rgba(251, 113, 133, 0.14)' },
+  badgeName: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.micro, textAlign: 'center' },
   quoteCard: {
     position: 'relative',
     overflow: 'hidden',
