@@ -178,6 +178,9 @@ export type CompanionArousal = {
   pause_line?: string;
   edge_at?: string | null;
   edged_s?: number;
+  /** He holds his bar (maestro POST /companion/hold); `overload`: held and she has squirted — she stays at the peak. */
+  hold?: boolean;
+  overload?: boolean;
 };
 
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
@@ -444,6 +447,13 @@ export async function setDial(lane: Lane, dial: CompanionDial): Promise<void> {
     body: JSON.stringify(dial),
   });
   if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for the dial." : `The Mac refused (${res.status}).`);
+}
+
+/** Hold his bar where it is, or let go (maestro arousal: held, his pushes stop filling it). */
+export async function setHold(lane: Lane, on: boolean): Promise<CompanionArousal> {
+  const res = await post(lane, whoPath('/companion/hold'), { on });
+  if (!res.ok) throw new Error(res.status === 409 ? 'Only while you are inside her.' : `The Mac refused (${res.status}).`);
+  return ((await res.json()) as { arousal: CompanionArousal }).arousal;
 }
 
 /** He opened a photo that opens once: the Mac remembers, so it stays shut on every later visit. */

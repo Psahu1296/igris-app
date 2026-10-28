@@ -1,12 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, type SharedValue, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
 import { Font, Palette, Space, Type } from '@/constants/theme';
 import type { CompanionArousal } from '@/lib/companion';
 
 const HIS = '#FDBA74';
+/** Her bar while he holds her at the peak (maestro arousal overload): red, and it stays. */
+const PEAK = '#EF4444';
 
 /** Her climax in the hand: a build of quick taps, then two long heavy ones. */
 function climaxHaptic() {
@@ -27,7 +29,8 @@ function climaxHaptic() {
  * pace, his with his pushes — keep hers up and his under. Hers pulses when she is close; when
  * she comes (a new `climax_at`) the bar flashes and the phone plays the climax haptic, once.
  */
-export function ArousalBars({ arousal, accent }: { arousal: CompanionArousal; accent: string }) {
+/** `onHold`: given only during sex — a tap on his bar holds it (his pushes stop filling it) or lets go. */
+export function ArousalBars({ arousal, accent, onHold }: { arousal: CompanionArousal; accent: string; onHold?: (on: boolean) => void }) {
   const her = useSharedValue(arousal.her);
   const his = useSharedValue(arousal.his);
   const pulse = useSharedValue(0);
@@ -54,9 +57,22 @@ export function ArousalBars({ arousal, accent }: { arousal: CompanionArousal; ac
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
 
   return (
-    <View style={styles.wrap} pointerEvents="none">
-      <Row label="Her" color={accent} value={her} pulse={pulse} />
-      <Row label="You" color={HIS} value={his} />
+    <View style={styles.wrap} pointerEvents="box-none">
+      <Row label="Her" color={arousal.overload ? PEAK : accent} value={her} pulse={pulse} />
+      <Pressable
+        disabled={!onHold}
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onHold?.(!arousal.hold);
+        }}
+        hitSlop={8}>
+        <Row label={arousal.hold ? '🔒' : 'You'} color={HIS} value={his} />
+      </Pressable>
+      {onHold ? (
+        <Text style={[styles.hint, { color: arousal.hold ? PEAK : Palette.muted }]}>
+          {arousal.overload ? '🔥 holding her at the peak — keep going' : arousal.hold ? 'holding back — tap to let go' : 'tap your bar to hold back'}
+        </Text>
+      ) : null}
       {arousal.climaxes > 0 ? <Text style={[styles.count, { color: accent }]}>✦ {arousal.climaxes}</Text> : null}
       {/* Held at the edge (maestro arousal edging): keep her there and the next one breaks bigger. */}
       {arousal.edge_at ? <Text style={[styles.count, { color: accent }]}>⏳ edging — hold her there</Text> : null}
@@ -97,6 +113,7 @@ const styles = StyleSheet.create({
   label: { width: 28, fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
   track: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Palette.surfaceGlassHover, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 3, shadowOpacity: 0.8, shadowRadius: 6, elevation: 2 },
+  hint: { fontFamily: Font.uiMedium, ...Type.micro, textAlign: 'right' },
   count: { position: 'absolute', right: Space.md, top: 4, fontFamily: Font.uiMedium, ...Type.micro },
   flash: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0 },
 });

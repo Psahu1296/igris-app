@@ -46,6 +46,7 @@ import {
   markSeen,
   moodLine,
   setDial,
+  setHold,
   PHOTO_ASPECT,
   setFace,
   shown,
@@ -754,7 +755,23 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           </View>
         ) : (
           <View style={styles.fill}>
-          {arousal ? <ArousalBars arousal={arousal} accent={ROSE} /> : null}
+          {arousal ? (
+            <ArousalBars
+              arousal={arousal}
+              accent={ROSE}
+              // Only mid-act (the button is ⚡ Push): hold his bar and keep her at the peak (maestro arousal).
+              onHold={
+                touches[0]?.id === 'push'
+                  ? (on) => {
+                      setArousal((a) => (a ? { ...a, hold: on, overload: on && a.overload } : a));
+                      setHold(lane, on)
+                        .then(setArousal)
+                        .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT));
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
           <ScrollView
             ref={scroller}
             style={styles.fill}
