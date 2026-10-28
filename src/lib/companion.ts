@@ -215,6 +215,8 @@ export type Companion = {
   position?: string | null;
   /** The touch game's bars, only in an intimate moment (null otherwise). */
   arousal?: CompanionArousal | null;
+  /** When he said he will be there (maestro countdown.py); null when he is not on his way. */
+  eta?: string | null;
   /** Where he can touch her from her photo, for the moment (maestro touch.SPOTS). */
   touch_spots?: CompanionTouch[];
   /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */

@@ -18,6 +18,7 @@ import { StoryViewer } from '@/components/companion/story-viewer';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
 import { ArousalBars } from '@/components/companion/arousal-bars';
+import { CountdownChip } from '@/components/companion/countdown-chip';
 import { PositionButton } from '@/components/companion/position-button';
 import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
@@ -185,6 +186,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The position button's wheel (maestro poses.POSITIONS), only in an intimate moment; [] hides it.
   const [positions, setPositions] = useState<CompanionPosition[]>(seen?.positions ?? []);
   const [position, setPosition] = useState<string | null>(seen?.position ?? null);
+  // He is on his way (maestro countdown.py): counted down under her name.
+  const [eta, setEta] = useState<string | null>(seen?.eta ?? null);
   // The touch game's bars (maestro arousal.py), only in an intimate moment.
   const [arousal, setArousal] = useState<CompanionArousal | null>(seen?.arousal ?? null);
   const lastTouchAt = useRef(0);
@@ -252,6 +255,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setTouches(c.touches ?? []);
         setPositions(c.positions ?? []);
         setPosition(c.position ?? null);
+        setEta(c.eta ?? null);
         setArousal(c.arousal ?? null);
         setGifts(c.gifts ?? []);
         setTouchSpots(c.touch_spots ?? []);
@@ -676,6 +680,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             <Meta numberOfLines={1}>
               {snapping ? 'sending a photo…' : busy ? 'typing…' : withPresence(mood ?? (model ? `on ${model}` : ''), messages)}
             </Meta>
+            {eta ? <CountdownChip key={eta} eta={eta} accent={ROSE} /> : null}
           </Pressable>
           {name !== null && lane === 'local' ? (
             // Live, Director, voice and Clear live in one sheet (components/companion/chat-menu.tsx);
