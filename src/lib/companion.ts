@@ -805,3 +805,22 @@ export async function makeTrainingSet(lane: Lane): Promise<number> {
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
   return ((await res.json()) as { copied: number }).copied;
 }
+
+/** One row of his yes / no / maybe list (maestro companion/prefs.py): the words are the Mac's. */
+export type PrefItem = { id: string; title: string; emoji: string; about: string; answer: '' | 'yes' | 'maybe' | 'no' };
+
+export async function fetchPrefs(lane: Lane): Promise<PrefItem[]> {
+  const res = await authedFetch(lane, whoPath('/companion/prefs'));
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for the list." : `The Mac refused (${res.status}).`);
+  return ((await res.json()) as { items: PrefItem[] }).items;
+}
+
+export async function setPref(lane: Lane, id: string, answer: PrefItem['answer']): Promise<PrefItem[]> {
+  const res = await authedFetch(lane, whoPath('/companion/prefs'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers: { [id]: answer } }),
+  });
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return ((await res.json()) as { items: PrefItem[] }).items;
+}

@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
+import { PrefsSheet } from '@/components/companion/prefs-sheet';
 import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
@@ -206,7 +207,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
-  const [sheet, setSheet] = useState<'memory' | 'diary' | 'switch' | 'menu' | null>(null);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'switch' | 'menu' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -874,9 +875,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onPhoto={(source) => void sendPhoto(source)}
             onMemory={() => setSheet('memory')}
             onDiary={() => setSheet('diary')}
+            onPrefs={() => setSheet('prefs')}
           />
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'prefs' ? <PrefsSheet lane={lane} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {watching && name ? (
           <StoryViewer

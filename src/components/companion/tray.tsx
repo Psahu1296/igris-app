@@ -41,7 +41,7 @@ const TABS: { id: Tab; title: string; icon: LucideIcon; hint: string }[] = [
   { id: 'do', title: 'Do', icon: Hand, hint: 'Adds an action to the message you are writing' },
   { id: 'play', title: 'Play', icon: Clapperboard, hint: 'Start something together — she sets it up and plays along' },
   { id: 'spoil', title: 'Spoil', icon: Gift, hint: 'Give her something, or pick what she wears (she shows you)' },
-  { id: 'tonight', title: 'Tonight', icon: Flame, hint: 'How tonight goes, and who leads — she follows it' },
+  { id: 'tonight', title: 'Tonight', icon: Flame, hint: 'How tonight goes, who leads, and what you are into' },
   { id: 'share', title: 'Share', icon: Camera, hint: 'Send her a photo, or look at what she keeps' },
 ];
 type Kind = CompanionScene['kind'];
@@ -74,6 +74,7 @@ export function CompanionTray({
   onPhoto,
   onMemory,
   onDiary,
+  onPrefs,
 }: {
   scenes: CompanionScene[];
   outfits: CompanionOutfit[];
@@ -91,6 +92,8 @@ export function CompanionTray({
   onPhoto: (source: 'camera' | 'library') => void;
   onMemory: () => void;
   onDiary: () => void;
+  /** His yes / no / maybe list (absent: the row is not shown). */
+  onPrefs?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('play');
   const offered = KINDS.filter((k) => scenes.some((s) => s.kind === k.id));
@@ -200,6 +203,11 @@ export function CompanionTray({
             })}
           </View>
           <Text style={styles.dialNote}>{dial ? PACE_NOTES[pace] : 'Not set: she goes by the moment.'}</Text>
+          {onPrefs ? (
+            <PressableScale onPress={tap(onPrefs)} accessibilityRole="button" style={[styles.lead, styles.prefs]}>
+              <Text style={[styles.pillText, { color: accent }]}>✅ Your yes · maybe · no list</Text>
+            </PressableScale>
+          ) : null}
           <View style={styles.leadRow}>
             {LEADS.map((l) => {
               const on = dial !== null && lead === l.id;
@@ -314,6 +322,7 @@ const styles = StyleSheet.create({
   paceText: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.micro },
   onText: { color: Palette.ground },
   dialNote: { fontFamily: Font.voiceItalic, color: Palette.muted, ...Type.small },
+  prefs: { flex: 0, borderColor: 'rgba(251, 113, 133, 0.4)' },
   leadRow: { flexDirection: 'row', gap: Space.sm },
   lead: {
     flex: 1,
