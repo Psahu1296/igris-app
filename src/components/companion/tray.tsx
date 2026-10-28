@@ -1,33 +1,63 @@
-import { BookHeart, Brain, Camera, Candy, Flame, Flower, Gem, Gift, ImagePlus, PawPrint, Shirt, SprayCan, type LucideIcon } from 'lucide-react-native';
-import { useState, type ReactNode } from 'react';
+import * as Haptics from 'expo-haptics';
+import {
+  BookHeart,
+  Brain,
+  Camera,
+  Candy,
+  Clapperboard,
+  Flame,
+  Flower,
+  Gem,
+  Gift,
+  Hand,
+  ImagePlus,
+  PawPrint,
+  Shirt,
+  SprayCan,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { createElement, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
-import { Font, Gutter, Palette, Space } from '@/constants/theme';
-import { LEADS, MY_EMOTES, PACES, type CompanionDial, type CompanionGift, type CompanionOutfit, type CompanionScene } from '@/lib/companion';
+import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
+import {
+  LEADS,
+  MY_EMOTES,
+  PACE_NOTES,
+  PACES,
+  type CompanionDial,
+  type CompanionGift,
+  type CompanionOutfit,
+  type CompanionScene,
+} from '@/lib/companion';
 
 /** Icon names the Mac may send for a gift (maestro companion/gifts.py `icon`); unknown → a gift box. */
 const GIFT_ICONS: Record<string, LucideIcon> = { Candy, Flame, Flower, Gem, PawPrint, Shirt, SprayCan };
 
-type Tab = 'actions' | 'scenes' | 'roleplay' | 'outfits' | 'gifts' | 'tonight' | 'more';
-const TABS: { id: Tab; title: string }[] = [
-  { id: 'actions', title: 'Actions' },
-  { id: 'scenes', title: 'Scenes' },
+type Tab = 'do' | 'play' | 'spoil' | 'tonight' | 'share';
+/** Five tabs by what he wants to do; each says in one line what it is for. */
+const TABS: { id: Tab; title: string; icon: LucideIcon; hint: string }[] = [
+  { id: 'do', title: 'Do', icon: Hand, hint: 'Adds an action to the message you are writing' },
+  { id: 'play', title: 'Play', icon: Clapperboard, hint: 'Start something together — she sets it up and plays along' },
+  { id: 'spoil', title: 'Spoil', icon: Gift, hint: 'Give her something, or pick what she wears (she shows you)' },
+  { id: 'tonight', title: 'Tonight', icon: Flame, hint: 'How tonight goes, and who leads — she follows it' },
+  { id: 'share', title: 'Share', icon: Camera, hint: 'Send her a photo, or look at what she keeps' },
+];
+type Kind = CompanionScene['kind'];
+const KINDS: { id: Kind; title: string }[] = [
+  { id: 'scene', title: 'Moments' },
+  { id: 'game', title: 'Games' },
   { id: 'roleplay', title: 'Roleplay' },
-  { id: 'outfits', title: 'Outfits' },
-  { id: 'gifts', title: 'Gifts' },
-  { id: 'tonight', title: 'Tonight' },
-  { id: 'more', title: 'More' },
 ];
 
 /**
- * The tray above the message box, opened by the smile button: what he can do besides
- * typing, one row at a time. Actions: his own (*hugs you*), added to the draft. Scenes:
- * scene cards and games she opens. Roleplay: characters she plays until he stops — the Mac
- * lists only those the moment allows, those that suit her mood first. Outfits: what she
- * wears, which she puts on and shows, and a try-on of three looks.
- * Tonight: how he wants a scene to go and who leads. More: send her a photo, her memory,
- * her diary. The lists come from the Mac (empty on an older maestro).
+ * The tray above the message box, opened by the smile button. Five tabs by intent — Do (an
+ * action in his message), Play (moments, games, roleplay), Spoil (gifts, outfits), Tonight
+ * (the dial), Share (photos, her memory and diary) — and every card says what it does (`about`
+ * from the Mac; the words are the Mac's, the app only lays them out). What starts a turn is
+ * dimmed while she answers. The lists come from the Mac and follow the moment (maestro
+ * scenes.offered, gifts.offered), so what is here is what fits now.
  */
 export function CompanionTray({
   scenes,
@@ -62,94 +92,235 @@ export function CompanionTray({
   onMemory: () => void;
   onDiary: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>('actions');
-  const on = { backgroundColor: accent, borderColor: accent };
-  const chip = (key: string, title: string, onPress: () => void, opts: { selected?: boolean; starts?: boolean; icon?: ReactNode; italic?: boolean } = {}) => (
-    <PressableScale
-      key={key}
-      onPress={onPress}
-      disabled={opts.starts && busy}
-      accessibilityRole="button"
-      accessibilityState={{ selected: !!opts.selected }}
-      accessibilityLabel={title}
-      style={[styles.chip, opts.icon ? styles.iconChip : null, opts.selected ? on : null, opts.starts && busy ? styles.off : null]}>
-      {opts.icon}
-      <Text style={[opts.italic ? styles.emoteText : styles.chipText, opts.selected ? styles.onText : null]}>{title}</Text>
-    </PressableScale>
-  );
-  const roleplays = scenes.filter((scene) => scene.kind === 'roleplay');
+  const [tab, setTab] = useState<Tab>('play');
+  const offered = KINDS.filter((k) => scenes.some((s) => s.kind === k.id));
+  const [kind, setKind] = useState<Kind>('scene');
+  const showing = offered.some((k) => k.id === kind) ? kind : (offered[0]?.id ?? 'scene');
   const pace = dial?.pace ?? 2;
   const lead = dial?.lead ?? 'switch';
+  const here = TABS.find((t) => t.id === tab) ?? TABS[0];
+
+  const tap = (fn: () => void) => () => {
+    void Haptics.selectionAsync();
+    fn();
+  };
 
   return (
     <View style={styles.tray}>
       <View style={styles.tabs}>
-        {TABS.map((t) => (
-          <PressableScale key={t.id} onPress={() => setTab(t.id)} accessibilityRole="tab" accessibilityState={{ selected: tab === t.id }} hitSlop={6}>
-            <Text style={[styles.tabText, tab === t.id ? { color: accent } : null]}>{t.title}</Text>
-          </PressableScale>
-        ))}
+        {TABS.map((t) => {
+          const on = t.id === tab;
+          return (
+            <PressableScale
+              key={t.id}
+              onPress={() => setTab(t.id)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              hitSlop={4}
+              style={[styles.tab, on && { backgroundColor: 'rgba(251, 113, 133, 0.14)' }]}>
+              {createElement(t.icon, { size: 16, color: on ? accent : Palette.muted })}
+              <Text style={[styles.tabText, on && { color: accent }]}>{t.title}</Text>
+            </PressableScale>
+          );
+        })}
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.row}>
-        {tab === 'actions' ? MY_EMOTES.map((emote) => chip(emote, emote, () => onEmote(emote), { italic: true })) : null}
-        {tab === 'scenes'
-          ? scenes.filter((scene) => scene.kind !== 'roleplay').map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true }))
-          : null}
-        {tab === 'roleplay'
-          ? roleplays.map((scene) => chip(scene.id, scene.title, () => onScene(scene), { starts: true }))
-          : null}
-        {tab === 'outfits' ? outfits.map((outfit) => chip(outfit.id, outfit.title, () => onOutfit(outfit), { starts: true })) : null}
-        {tab === 'gifts'
-          ? gifts.map((gift) => {
-              const Icon = GIFT_ICONS[gift.icon] ?? Gift;
-              return chip(gift.id, gift.label, () => onGift?.(gift), { starts: true, icon: <Icon size={14} color={accent} /> });
-            })
-          : null}
-        {tab === 'tonight' ? (
-          <>
-            {PACES.map((title, i) => chip(`pace-${i}`, title, () => onDial({ pace: i, lead }), { selected: dial !== null && pace === i }))}
-            <View style={styles.divider} />
-            {LEADS.map((l) => chip(l.id, l.title, () => onDial({ pace, lead: l.id }), { selected: dial !== null && lead === l.id }))}
-          </>
-        ) : null}
-        {tab === 'more' ? (
-          <>
-            {chip('library', 'Send a photo', () => onPhoto('library'), { starts: true, icon: <ImagePlus size={14} color={accent} /> })}
-            {chip('camera', 'Camera', () => onPhoto('camera'), { starts: true, icon: <Camera size={14} color={accent} /> })}
-            {chip('memory', 'Her memory', onMemory, { icon: <Brain size={14} color={accent} /> })}
-            {chip('diary', 'Her diary', onDiary, { icon: <BookHeart size={14} color={accent} /> })}
-          </>
-        ) : null}
-        {(tab === 'scenes' && scenes.length === 0) || (tab === 'outfits' && outfits.length === 0) || (tab === 'gifts' && gifts.length === 0) ? (
-          <Text style={styles.none}>This needs a newer maestro on the Mac.</Text>
-        ) : null}
-        {tab === 'roleplay' && scenes.length > 0 && roleplays.length === 0 ? (
-          <Text style={styles.none}>Not now — she is upset, or the mood is not there yet.</Text>
-        ) : null}
-      </ScrollView>
+      <Text style={styles.hint}>{here.hint}</Text>
+
+      {tab === 'do' ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {MY_EMOTES.map((emote) => (
+            <PressableScale key={emote} onPress={tap(() => onEmote(emote))} accessibilityRole="button" style={styles.chip}>
+              <Text style={styles.emoteText}>*{emote}*</Text>
+            </PressableScale>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {tab === 'play' ? (
+        <>
+          {offered.length > 1 ? (
+            <View style={styles.pills}>
+              {offered.map((k) => (
+                <PressableScale
+                  key={k.id}
+                  onPress={() => setKind(k.id)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: showing === k.id }}
+                  style={[styles.pill, showing === k.id && { borderColor: accent }]}>
+                  <Text style={[styles.pillText, showing === k.id && { color: accent }]}>{k.title}</Text>
+                </PressableScale>
+              ))}
+            </View>
+          ) : null}
+          <Cards busy={busy}>
+            {scenes
+              .filter((s) => s.kind === showing)
+              .map((s) => (
+                <Card key={s.id} busy={busy} lead={s.emoji ?? '✨'} title={s.title} about={s.about} onPress={tap(() => onScene(s))} />
+              ))}
+          </Cards>
+          {scenes.length === 0 ? <Text style={styles.empty}>Nothing to start right now.</Text> : null}
+        </>
+      ) : null}
+
+      {tab === 'spoil' ? (
+        <Cards busy={busy}>
+          {gifts.map((g) => (
+            <Card
+              key={g.id}
+              busy={busy}
+              lead={createElement(GIFT_ICONS[g.icon] ?? Gift, { size: 20, color: accent })}
+              title={g.label}
+              about={g.about}
+              onPress={tap(() => onGift?.(g))}
+            />
+          ))}
+          {outfits.map((o) => (
+            <Card key={o.id} busy={busy} lead={createElement(Shirt, { size: 20, color: accent })} title={o.title} about={o.about} onPress={tap(() => onOutfit(o))} />
+          ))}
+        </Cards>
+      ) : null}
+
+      {tab === 'tonight' ? (
+        <View style={styles.dial}>
+          <View style={styles.paceRow}>
+            {PACES.map((title, i) => {
+              const on = dial !== null && pace === i;
+              return (
+                <PressableScale
+                  key={title}
+                  onPress={tap(() => onDial({ pace: i, lead }))}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${title}: ${PACE_NOTES[i]}`}
+                  style={[styles.paceStep, { opacity: 0.45 + i * 0.13 }, on && { backgroundColor: accent, opacity: 1 }]}>
+                  <Text style={[styles.paceText, on && styles.onText]}>{title}</Text>
+                </PressableScale>
+              );
+            })}
+          </View>
+          <Text style={styles.dialNote}>{dial ? PACE_NOTES[pace] : 'Not set: she goes by the moment.'}</Text>
+          <View style={styles.leadRow}>
+            {LEADS.map((l) => {
+              const on = dial !== null && lead === l.id;
+              return (
+                <PressableScale
+                  key={l.id}
+                  onPress={tap(() => onDial({ pace, lead: l.id }))}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.lead, on && { borderColor: accent, backgroundColor: 'rgba(251, 113, 133, 0.14)' }]}>
+                  <Text style={[styles.pillText, on && { color: accent }]}>{l.title}</Text>
+                </PressableScale>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {tab === 'share' ? (
+        <Cards busy={busy}>
+          <Card busy={busy} lead={createElement(ImagePlus, { size: 20, color: accent })} title="Send a photo" about="She sees it and answers it" onPress={tap(() => onPhoto('library'))} />
+          <Card busy={busy} lead={createElement(Camera, { size: 20, color: accent })} title="Camera" about="Take one now and send it" onPress={tap(() => onPhoto('camera'))} />
+          <Card busy={false} lead={createElement(Brain, { size: 20, color: accent })} title="Her memory" about="What she remembers about you two" onPress={tap(onMemory)} />
+          <Card busy={false} lead={createElement(BookHeart, { size: 20, color: accent })} title="Her diary" about="What she wrote at night" onPress={tap(onDiary)} />
+        </Cards>
+      ) : null}
     </View>
   );
 }
 
+function Cards({ children }: { busy: boolean; children: React.ReactNode }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      {children}
+    </ScrollView>
+  );
+}
+
+/** One thing he can do: what it is, and in two lines what happens. */
+function Card({ lead, title, about, busy, onPress }: { lead: React.ReactNode; title: string; about?: string; busy: boolean; onPress: () => void }) {
+  return (
+    <PressableScale onPress={onPress} disabled={busy} accessibilityRole="button" accessibilityLabel={about ? `${title}. ${about}` : title} style={[styles.card, busy && styles.off]}>
+      <View style={styles.cardLead}>{typeof lead === 'string' ? <Text style={styles.emoji}>{lead}</Text> : lead}</View>
+      <Text style={styles.cardTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      {about ? (
+        <Text style={styles.cardAbout} numberOfLines={2}>
+          {about}
+        </Text>
+      ) : null}
+    </PressableScale>
+  );
+}
+
 const styles = StyleSheet.create({
-  // Sits on the message box like a keyboard's suggestion rows.
-  tray: { borderTopWidth: 1, borderTopColor: Palette.hairline, paddingTop: Space.sm },
-  tabs: { flexDirection: 'row', gap: Space.lg, paddingHorizontal: Gutter - 2 },
-  tabText: { fontFamily: Font.ui, fontSize: 12, color: Palette.muted },
-  row: { gap: Space.sm, paddingHorizontal: Gutter - 6, paddingVertical: Space.sm, alignItems: 'center' },
-  chip: {
-    paddingHorizontal: 12,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
+  tray: {
+    paddingTop: Space.sm,
+    paddingBottom: Space.sm,
+    borderTopWidth: 1,
+    borderTopColor: Palette.hairline,
+    backgroundColor: Palette.ground,
+    gap: Space.sm,
+  },
+  tabs: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Gutter - 6 },
+  tab: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 6, borderRadius: 12 },
+  tabText: { fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
+  hint: { paddingHorizontal: Gutter, fontFamily: Font.ui, color: Palette.faint, ...Type.micro },
+  row: { gap: Space.sm, paddingHorizontal: Gutter },
+  pills: { flexDirection: 'row', gap: Space.sm, paddingHorizontal: Gutter },
+  pill: {
+    paddingHorizontal: Space.md,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Palette.hairline,
   },
-  iconChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pillText: { fontFamily: Font.uiMedium, color: Palette.muted, ...Type.small },
+  chip: {
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.sm,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+    backgroundColor: Palette.surfaceGlass,
+  },
+  emoteText: { fontFamily: Font.voiceItalic, color: Palette.text, ...Type.ask },
+  card: {
+    width: 148,
+    padding: Space.md,
+    gap: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+    backgroundColor: Palette.surface,
+  },
+  cardLead: { height: 26, justifyContent: 'center' },
+  emoji: { fontSize: 22, lineHeight: 26 },
+  cardTitle: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.small },
+  cardAbout: { fontFamily: Font.ui, color: Palette.muted, ...Type.micro },
   off: { opacity: 0.4 },
-  chipText: { fontFamily: Font.ui, fontSize: 13, color: Palette.text },
-  emoteText: { fontFamily: Font.voiceItalic, fontSize: 14, color: Palette.text },
+  empty: { paddingHorizontal: Gutter, fontFamily: Font.ui, color: Palette.faint, ...Type.small },
+  dial: { paddingHorizontal: Gutter, gap: Space.sm },
+  paceRow: { flexDirection: 'row', gap: 4 },
+  paceStep: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Space.sm,
+    borderRadius: 10,
+    backgroundColor: 'rgba(251, 113, 133, 0.22)',
+  },
+  paceText: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.micro },
   onText: { color: Palette.ground },
-  divider: { width: 1, height: 18, backgroundColor: Palette.hairline },
-  none: { fontFamily: Font.ui, fontSize: 12, color: Palette.faint },
+  dialNote: { fontFamily: Font.voiceItalic, color: Palette.muted, ...Type.small },
+  leadRow: { flexDirection: 'row', gap: Space.sm },
+  lead: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Space.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
 });

@@ -91,11 +91,20 @@ export const TONE_COLORS: Record<string, string> = {
 export const toneColor = (tone?: string) => TONE_COLORS[tone ?? 'neutral'] ?? TONE_COLORS.neutral;
 
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
-export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' | 'roleplay' };
+/** `emoji` and `about` (one line of what happens) are for his tray; missing on a maestro before 2026-10-28. */
+export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' | 'roleplay'; emoji?: string; about?: string };
 
 /** Tonight's dial (maestro companion/dial.py): how he wants a scene to go, and who leads. */
 export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch' };
 export const PACES = ['Tender', 'Slow burn', 'Playful', 'Intense', 'Wild'];
+/** What each pace does to an intimate scene, for the tray's Tonight tab — the same as maestro dial.PACE says to her. */
+export const PACE_NOTES = [
+  'Cuddles and soft kisses, unhurried',
+  'Romantic, every step lingers',
+  'Playful and passionate, she keeps it moving',
+  'Hungry and bold, she drives it',
+  'Bold, nothing held back',
+];
 export const LEADS: { id: CompanionDial['lead']; title: string }[] = [
   { id: 'her', title: 'She leads' },
   { id: 'him', title: 'You lead' },
@@ -105,10 +114,10 @@ export const LEADS: { id: CompanionDial['lead']; title: string }[] = [
 /** She is busy and will answer at `until` (maestro companion/presence.py). */
 export type CompanionAway = { until: string; reason: string };
 
-export type CompanionOutfit = { id: string; title: string };
+export type CompanionOutfit = { id: string; title: string; about?: string };
 
 /** A gift he can give her now (maestro companion/gifts.py); `line` is his action as the Mac saves it. */
-export type CompanionGift = { id: string; label: string; icon: string; line: string };
+export type CompanionGift = { id: string; label: string; icon: string; line: string; about?: string };
 
 export type DiaryEntry = { date: string; text: string };
 

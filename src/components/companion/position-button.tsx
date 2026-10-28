@@ -10,7 +10,7 @@ import type { CompanionPosition } from '@/lib/companion';
 
 /**
  * The second floating button over her chat, beside the touch one: switch how the two of you
- * are placed. The Mac offers the wheel only in an intimate moment (maestro poses.POSITIONS,
+ * are placed. The Mac offers the wheel only when the moment fits (maestro poses.POSITIONS,
  * the same rule as the touches); a pick is his move, her reaction is a turn, and her next
  * photos are drawn in that position. The words are the Mac's: this file knows none of them.
  */
