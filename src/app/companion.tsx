@@ -238,6 +238,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // a socket that slept with the screen may never say it died.
   const stream = useRef<AbortController | null>(null);
   const poll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Which sync is newest: a GET that started before her reply and answered after it put the
+  // older list back, and her latest message vanished a few seconds after it came (live, 2026-10-28).
+  const syncSeq = useRef(0);
   type SyncOpts = { lost?: string; tries?: number; first?: boolean };
   // sync() asks again by timer; through a ref, since a callback cannot name itself.
   const syncLater = useRef<(opts: SyncOpts) => void>(() => {});
@@ -254,9 +257,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
       const again = (next: SyncOpts) => {
         poll.current = setTimeout(() => syncLater.current(next), POLL_MS);
       };
+      const seq = ++syncSeq.current;
       try {
         const c = await fetchCompanion(lane);
-        if (!mounted.current || stream.current) return; // a newer turn is streaming live
+        if (!mounted.current || stream.current || seq !== syncSeq.current) return; // a newer turn or sync
         const view = shown(c);
         setName(c.name);
         setModel(c.model);
@@ -284,8 +288,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         // The Mac sends the newest 200 (maestro SHOWN_MESSAGES): keep what is already on screen from
         // before them, or every reply slid the window and the top two vanished, read as "deleted".
         setMessages((on) => {
-          const first = view.messages[0]?.at;
-          const older = first ? on.filter((m) => m.at < first) : [];
+          // By time, not by string: the phone's own stamps are UTC ("…Z"), the Mac's IST ("+05:30").
+          const first = Date.parse(view.messages[0]?.at ?? '');
+          const older = Number.isNaN(first) ? [] : on.filter((m) => Date.parse(m.at) < first);
           return [...older, ...view.messages];
         });
         setLive(view.live);
@@ -404,6 +409,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
       );
     const controller = new AbortController();
     stream.current = controller;
+    syncSeq.current++; // anything already asked for is older than this turn
     // The stream was lost, not the turn: the Mac carries on, and sync() shows it.
     let handedOver = false;
     try {
