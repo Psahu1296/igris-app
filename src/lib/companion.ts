@@ -210,6 +210,8 @@ export type Companion = {
   photos?: CompanionPhotosComing | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
+  /** The second button: his mouth and hands on her (maestro touch.PLEASURE), intimate moments only. */
+  pleasure?: CompanionTouch[];
   /** The position wheel, only in an intimate moment ([] otherwise), and the one they are in. */
   positions?: CompanionPosition[];
   position?: string | null;

@@ -23,7 +23,7 @@ const ICONS: Record<string, LucideIcon> = { Droplet, Feather, Flame, Hand, HandH
 /** Taps closer together than this are one touch, stronger (touch.line on the Mac). */
 const BURST_MS = 900;
 /** The intimate touches feel heavier under the thumb. */
-const HEAVY = new Set(['finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress', 'push', 'deep-push', 'spank']);
+const HEAVY = new Set(['lick', 'flick', 'suck', 'rub', 'two-fingers', 'finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress', 'push', 'deep-push', 'spank']);
 /** Close, still touches: the phone beats like her heart under his hand. */
 const HEARTBEAT = new Set(['cuddle', 'hug', 'virtual-hug', 'forehead-kiss', 'stroke-hair']);
 /** The clock, read in a handler (a module function: the React rules flag Date.now in a component). */
@@ -44,9 +44,12 @@ export function TouchButton({
   touches,
   disabled,
   accent,
+  raised = false,
   onTouch,
 }: {
   touches: CompanionTouch[];
+  /** The second button (his mouth and hands, maestro touch.PLEASURE): sits above the first. */
+  raised?: boolean;
   disabled: boolean;
   accent: string;
   /** `pace`: his taps per second across the burst (maestro arousal.py: the game's rhythm). */
@@ -122,7 +125,7 @@ export function TouchButton({
   };
 
   return (
-    <View style={styles.anchor} pointerEvents="box-none">
+    <View style={[styles.anchor, raised && styles.raised]} pointerEvents="box-none">
       {open ? (
         <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={styles.fan}>
           {touches.map((t) => {
@@ -197,6 +200,7 @@ const SIZE = 56;
 
 const styles = StyleSheet.create({
   anchor: { position: 'absolute', right: Space.lg, bottom: Space.lg, alignItems: 'flex-end' },
+  raised: { bottom: Space.lg + 84 },
   buttonWrap: { width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' },
   button: {
     width: SIZE,

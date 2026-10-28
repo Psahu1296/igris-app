@@ -184,6 +184,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
+  const [pleasure, setPleasure] = useState<CompanionTouch[]>(seen?.pleasure ?? []);
   // The position button's wheel (maestro poses.POSITIONS), only in an intimate moment; [] hides it.
   const [positions, setPositions] = useState<CompanionPosition[]>(seen?.positions ?? []);
   const [position, setPosition] = useState<string | null>(seen?.position ?? null);
@@ -254,6 +255,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setScenes(c.scenes ?? []);
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
+        setPleasure(c.pleasure ?? []);
         setPositions(c.positions ?? []);
         setPosition(c.position ?? null);
         setEta(c.eta ?? null);
@@ -839,6 +841,18 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           {touches.length && !emoting ? (
             <TouchButton
               touches={touches}
+              disabled={busy}
+              accent={accent}
+              onTouch={(touch, taps, pace) => {
+                lastTouchAt.current = Date.now();
+                void send({ touch: { touch, taps, pace } });
+              }}
+            />
+          ) : null}
+          {pleasure.length && !emoting ? (
+            <TouchButton
+              touches={pleasure}
+              raised
               disabled={busy}
               accent={accent}
               onTouch={(touch, taps, pace) => {
