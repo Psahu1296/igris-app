@@ -17,6 +17,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplash } from '@/components/animated-splash';
 import { Palette } from '@/constants/theme';
+import { usePushTaps } from '@/lib/push';
 import { checkApk } from '@/lib/updates';
 import { SessionProvider, useSession } from '@/state/session';
 
@@ -75,6 +76,7 @@ function Shell() {
  */
 function RootNavigator() {
   const { status } = useSession();
+  usePushTaps(status === 'signed-in');
 
   // Once per launch: a newer APK is worth saying out loud, because unlike a JS update it
   // never arrives by itself. Quiet on failure — no network is not news.

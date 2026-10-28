@@ -1,6 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+// Push (lib/push.ts) needs Firebase: google-services.json comes from the Firebase console and
+// is kept out of this public repo; CI writes it from a secret. Without it the app builds, no push.
+if (file("google-services.json").exists()) apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 

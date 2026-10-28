@@ -497,6 +497,13 @@ released with no underruns. Download to speech took under 20s on 5G.
   (buttons: a string is sent as his message, {label, touch} as that touch) — games and her first
   moves. Her name is followed by her tone as weather (`TONE_WEATHER`) and 🔥N (`streak`, dimmed
   while today's morning is open). All JS (OTA).
+- **Her pushes** (`lib/push.ts`, 2026-10-28, runtime 1.4.0): expo-notifications; the companion
+  screen registers the Expo push token with maestro (POST `/companion/push-token`) on the Mac lane,
+  and a tap opens her chat (`usePushTaps` in `_layout.tsx`). maestro pushes only what she writes
+  unasked. Android delivery is FCM: `android/app/google-services.json` (gitignored; CI restores it
+  from `GOOGLE_SERVICES_JSON_BASE64`) and the FCM V1 key on EAS. The plugin was added to app.json
+  but `android/` was edited by hand (one manifest meta-data, the google-services Gradle plugin):
+  prebuild rewrote signing and versionName and was reverted.
 - Device actions need a maestro with `agents/device.py`; notification actions need the
   2026-09-24 version (`notify` capability).
 - maestro's `BILL_APP_URL` (`config.py:40`) is dead config, referenced nowhere. The dhaba

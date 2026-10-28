@@ -49,3 +49,6 @@ example
 # Gradle output of local Expo modules (android/.gitignore covers only android/)
 /modules/*/android/build/
 /modules/*/android/.gradle/
+
+# Firebase config for push (lib/push.ts): from the Firebase console, never committed
+android/app/google-services.json

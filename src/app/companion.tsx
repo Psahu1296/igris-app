@@ -80,6 +80,7 @@ import { drawnSource, type Lane, type Photo } from '@/lib/maestro';
 import { pickPhoto } from '@/lib/photo';
 import { useListening } from '@/lib/voice/use-listening';
 import { useKeyboardInset } from '@/lib/use-keyboard-inset';
+import { registerPush } from '@/lib/push';
 import { useSession } from '@/state/session';
 
 /**
@@ -142,6 +143,10 @@ export default function CompanionScreen() {
 
 function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const { lane } = useSession();
+  // Her unasked messages reach the lock screen (lib/push); only the Mac sends them.
+  useEffect(() => {
+    if (lane === 'local') void registerPush(lane);
+  }, [lane]);
   // Opens on what the Mac said last time (lib/companion lastCompanion), then refreshes.
   const [seen] = useState(() => (lane === 'local' ? lastCompanion(lane) : null));
   const [view] = useState(() => (seen ? shown(seen) : null));
