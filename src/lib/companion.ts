@@ -210,6 +210,8 @@ export type Companion = {
   photos?: CompanionPhotosComing | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
+  /** Her toy's remote (maestro toy.py): while apart and warm; null hides it. */
+  toy?: CompanionToy | null;
   /** The second button: his mouth and hands on her (maestro touch.PLEASURE), intimate moments only. */
   pleasure?: CompanionTouch[];
   /** The position wheel, only in an intimate moment ([] otherwise), and the one they are in. */
@@ -553,6 +555,8 @@ export async function streamCompanion(opts: {
   gift?: string;
   /** He moves the two of them into a position (POST /companion/position): its id. */
   position?: string;
+  /** He sets her toy from his remote (POST /companion/toy). */
+  toy?: { level: number; pattern: string };
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   /** One of her photos again from his eyes or hers (maestro POST /companion/view): no words,
@@ -561,7 +565,7 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, position, story, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, position, toy, story, live = false, view, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card =
     scene !== undefined
@@ -574,13 +578,15 @@ export async function streamCompanion(opts: {
             ? { path: 'gift', id: gift }
             : position !== undefined
               ? { path: 'position', id: position }
-              : null;
+              : toy !== undefined
+                ? { path: 'toy', id: '' }
+                : null;
   const snap = !card && !view && message === undefined && image === undefined;
   const path = view ? 'view' : card ? card.path : snap ? 'snap' : 'stream';
   const body = view
     ? JSON.stringify(view)
     : card
-      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : { id: card.id })
+      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : card.path === 'toy' ? toy : { id: card.id })
       : snap
         ? undefined
         : JSON.stringify({ message: message ?? '', image, live, story });
@@ -826,3 +832,6 @@ export async function setPref(lane: Lane, id: string, answer: PrefItem['answer']
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
   return ((await res.json()) as { items: PrefItem[] }).items;
 }
+
+/** Her toy's remote (maestro companion/toy.py): its level now (0 = off) and the patterns, labelled on the Mac. */
+export type CompanionToy = { level: number; pattern: string; max: number; patterns: { id: string; label: string }[] };

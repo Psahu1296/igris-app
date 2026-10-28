@@ -75,6 +75,7 @@ export function CompanionTray({
   onMemory,
   onDiary,
   onPrefs,
+  onToy,
 }: {
   scenes: CompanionScene[];
   outfits: CompanionOutfit[];
@@ -94,6 +95,8 @@ export function CompanionTray({
   onDiary: () => void;
   /** His yes / no / maybe list (absent: the row is not shown). */
   onPrefs?: () => void;
+  /** Her toy's remote, while apart and warm (absent: not offered now). */
+  onToy?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('play');
   const offered = KINDS.filter((k) => scenes.some((s) => s.kind === k.id));
@@ -203,6 +206,11 @@ export function CompanionTray({
             })}
           </View>
           <Text style={styles.dialNote}>{dial ? PACE_NOTES[pace] : 'Not set: she goes by the moment.'}</Text>
+          {onToy ? (
+            <PressableScale onPress={tap(onToy)} accessibilityRole="button" style={[styles.lead, styles.prefs]}>
+              <Text style={[styles.pillText, { color: accent }]}>🎛️ Her toy — you hold the remote</Text>
+            </PressableScale>
+          ) : null}
           {onPrefs ? (
             <PressableScale onPress={tap(onPrefs)} accessibilityRole="button" style={[styles.lead, styles.prefs]}>
               <Text style={[styles.pillText, { color: accent }]}>✅ Your yes · maybe · no list</Text>

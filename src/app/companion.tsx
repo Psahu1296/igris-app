@@ -10,6 +10,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
+import { ToySheet } from '@/components/companion/toy-sheet';
 import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
@@ -60,6 +61,7 @@ import {
   type CompanionArousal,
   type CompanionPosition,
   type CompanionTouch,
+  type CompanionToy,
   type CompanionDial,
   type CompanionListing,
   type CompanionPhotosComing,
@@ -104,6 +106,8 @@ type Turn = {
   touch?: { touch: CompanionTouch; taps: number; pace?: number };
   /** A position from the position button's wheel. */
   position?: CompanionPosition;
+  /** A change on her toy's remote. */
+  toy?: { level: number; pattern: string };
   /** A gift from the tray. */
   gift?: CompanionGift;
   /** A reply typed in the story viewer, and the story it answers. */
@@ -185,6 +189,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
   const [pleasure, setPleasure] = useState<CompanionTouch[]>(seen?.pleasure ?? []);
+  const [toy, setToy] = useState<CompanionToy | null>(seen?.toy ?? null);
   // The position button's wheel (maestro poses.POSITIONS), only in an intimate moment; [] hides it.
   const [positions, setPositions] = useState<CompanionPosition[]>(seen?.positions ?? []);
   const [position, setPosition] = useState<string | null>(seen?.position ?? null);
@@ -208,7 +213,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
-  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'switch' | 'menu' | null>(null);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'switch' | 'menu' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -256,6 +261,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
         setPleasure(c.pleasure ?? []);
+        setToy(c.toy ?? null);
         setPositions(c.positions ?? []);
         setPosition(c.position ?? null);
         setEta(c.eta ?? null);
@@ -341,7 +347,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ? turn.reply.text
         : turn.say
           ? turn.say
-          : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.scene !== undefined || turn.outfit !== undefined
+          : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.toy || turn.scene !== undefined || turn.outfit !== undefined
           ? undefined
           : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
@@ -397,6 +403,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps, pace: turn.touch.pace } : undefined,
         gift: turn.gift?.id,
         position: turn.position?.id,
+        toy: turn.toy,
         story: turn.reply?.story.id,
         view: turn.view,
         live: liveOn,
@@ -890,9 +897,22 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onMemory={() => setSheet('memory')}
             onDiary={() => setSheet('diary')}
             onPrefs={() => setSheet('prefs')}
+            onToy={toy ? () => setSheet('toy') : undefined}
           />
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'toy' && toy ? (
+          <ToySheet
+            toy={toy}
+            accent={ROSE}
+            busy={busy}
+            onSet={(level, pattern) => {
+              setSheet(null);
+              void send({ toy: { level, pattern } });
+            }}
+            onClose={() => setSheet(null)}
+          />
+        ) : null}
         {sheet === 'prefs' ? <PrefsSheet lane={lane} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {watching && name ? (
