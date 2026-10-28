@@ -11,6 +11,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
 import { ToySheet } from '@/components/companion/toy-sheet';
+import { VoiceNote } from '@/components/companion/voice-note';
 import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
@@ -734,6 +735,19 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               // withoutTag here is a second net, not the fix — see its own comment.
               // A message with her photo is cleaned too: a tag the Mac failed to read (one of
               // 913 characters, 2026-10-02) was saved in her words and shown under the photo.
+              if (m.role === 'her' && m.voice && !m.image && m.text) {
+                // Her voice note: one bubble, played in her voice (maestro voicenote.py).
+                return [
+                  <VoiceNote
+                    key={`${m.at}-${i}-voice`}
+                    text={withoutTag(m.text).trim()}
+                    accent={accent}
+                    playing={speaking === m.at}
+                    onPlay={() => (speaking === m.at ? quiet() : speak(m.at, m.text))}
+                    onLongPress={() => deleteMsg(m.at)}
+                  />,
+                ];
+              }
               const parts = m.role !== 'her' ? [m.text] : m.image ? [withoutTag(m.text).trim()] : bubbles(withoutTag(m.text));
               return parts.map((part, j) => (
                 <Bubble

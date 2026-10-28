@@ -59,6 +59,8 @@ export type CompanionMessage = {
   choices?: (string | { label: string; touch: string })[];
   /** Her good morning / good night (maestro companion/rituals.py). */
   ritual?: 'morning' | 'night';
+  /** A voice note (maestro companion/voicenote.py): shown as one, played in her voice. */
+  voice?: boolean;
 };
 
 /** Her tone as weather beside her name (maestro companion/tone.py TONES). */
