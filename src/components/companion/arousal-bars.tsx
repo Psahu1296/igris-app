@@ -58,6 +58,8 @@ export function ArousalBars({ arousal, accent }: { arousal: CompanionArousal; ac
       <Row label="Her" color={accent} value={her} pulse={pulse} />
       <Row label="You" color={HIS} value={his} />
       {arousal.climaxes > 0 ? <Text style={[styles.count, { color: accent }]}>✦ {arousal.climaxes}</Text> : null}
+      {/* Held at the edge (maestro arousal edging): keep her there and the next one breaks bigger. */}
+      {arousal.edge_at ? <Text style={[styles.count, { color: accent }]}>⏳ edging — hold her there</Text> : null}
       <Animated.View style={[styles.flash, { backgroundColor: accent }, flashStyle]} />
     </View>
   );

@@ -7,6 +7,20 @@ import { Meta } from '@/components/typography';
 import { Font, Palette, Space, Type } from '@/constants/theme';
 import type { CompanionToy } from '@/lib/companion';
 
+/** Her toy's pattern in his hand too, for about three seconds: the same shape he picked. */
+const SHAPES: Record<string, number[]> = {
+  waves: [0, 300, 500, 700, 1300, 1600, 1800, 2000, 2600],
+  pulse: [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800],
+  build: [0, 600, 1100, 1500, 1800, 2050, 2250, 2400, 2520, 2620, 2700],
+  tease: [0, 900, 2400],
+};
+
+export function buzz(pattern: string, level: number) {
+  if (!level) return;
+  const style = level >= 7 ? Haptics.ImpactFeedbackStyle.Heavy : level >= 4 ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light;
+  for (const at of SHAPES[pattern] ?? SHAPES.pulse) setTimeout(() => void Haptics.impactAsync(style), at);
+}
+
 /**
  * His remote for her toy (maestro companion/toy.py): a level 0-10 and a pattern. Each change is
  * a turn — she feels it and answers — so the sheet closes on a pick and the chat shows her reaction.

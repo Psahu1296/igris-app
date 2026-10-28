@@ -161,7 +161,17 @@ export class CompanionRefused extends Error {}
  * she comes (the app plays its climax haptic once per value); `close` = she is at the edge;
  * `pause_line` is his line when the app sends "paused" for him (the words are the Mac's).
  */
-export type CompanionArousal = { her: number; his: number; climaxes: number; climax_at: string; close: boolean; pause_line?: string };
+/** `edge_at`: since when she has been held at the edge (maestro arousal edging; `edged_s` to hold for a bigger one). */
+export type CompanionArousal = {
+  her: number;
+  his: number;
+  climaxes: number;
+  climax_at: string;
+  close: boolean;
+  pause_line?: string;
+  edge_at?: string | null;
+  edged_s?: number;
+};
 
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
 export type CompanionPosition = { id: string; title: string; about: string; said: string };
@@ -500,7 +510,7 @@ export type CompanionEvent =
   /** Her words so far, as the model writes them. */
   | { kind: 'token'; text: string }
   /** The reply as saved. Can differ from the tokens: maestro replaces a reply that breaks its age rule. */
-  | { kind: 'reply'; text: string; seconds?: number }
+  | { kind: 'reply'; text: string; seconds?: number; voice?: boolean }
   /** She is writing the reply again (it repeated her own lines): the words so far are void. */
   | { kind: 'retake' }
   /** She is busy: his message is saved and she answers later (`until`). No reply follows. */
@@ -644,6 +654,7 @@ export async function streamCompanion(opts: {
         once?: boolean;
         until?: string;
         seconds?: number;
+        voice?: boolean;
       };
       try {
         data = JSON.parse(frame.data);
@@ -652,7 +663,7 @@ export async function streamCompanion(opts: {
       }
       if (frame.event === 'status') onEvent({ kind: 'typing' });
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
-      else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message, seconds: data.seconds });
+      else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message, seconds: data.seconds, voice: data.voice === true });
       else if (frame.event === 'retake') onEvent({ kind: 'retake' });
       else if (frame.event === 'seen') onEvent({ kind: 'seen' });
       else if (frame.event === 'away' && data.until)

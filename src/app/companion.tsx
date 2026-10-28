@@ -10,7 +10,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
-import { ToySheet } from '@/components/companion/toy-sheet';
+import { buzz, ToySheet } from '@/components/companion/toy-sheet';
 import { VoiceNote } from '@/components/companion/voice-note';
 import { DiarySheet } from '@/components/companion/diary-sheet';
 import { DirectorSheet, FixSheet } from '@/components/companion/director-sheet';
@@ -432,7 +432,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             setLive(null);
             setMood(moodLine({ away: event.away }));
           } else if (event.kind === 'reply') {
-            if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt, took: event.seconds }]);
+            if (event.text) setMessages((m) => [...m, { role: 'her', text: event.text, at: herAt, took: event.seconds, voice: event.voice }]);
             if (event.text && voiceMode.get()) speak(herAt, event.text);
             setLive(null);
           } else if (event.kind === 'photoStarted') {
@@ -922,6 +922,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             busy={busy}
             onSet={(level, pattern) => {
               setSheet(null);
+              buzz(pattern, level);
               void send({ toy: { level, pattern } });
             }}
             onClose={() => setSheet(null)}
