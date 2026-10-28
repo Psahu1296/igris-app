@@ -23,7 +23,17 @@ const ICONS: Record<string, LucideIcon> = { Droplet, Feather, Flame, Hand, HandH
 /** Taps closer together than this are one touch, stronger (touch.line on the Mac). */
 const BURST_MS = 900;
 /** The intimate touches feel heavier under the thumb. */
-const HEAVY = new Set(['finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress', 'push', 'spank']);
+const HEAVY = new Set(['finger', 'squeeze', 'neck-bite', 'deep-kiss', 'caress', 'push', 'deep-push', 'spank']);
+/** Close, still touches: the phone beats like her heart under his hand. */
+const HEARTBEAT = new Set(['cuddle', 'hug', 'virtual-hug', 'forehead-kiss', 'stroke-hair']);
+/** The clock, read in a handler (a module function: the React rules flag Date.now in a component). */
+const nowMs = () => Date.now();
+/** A heartbeat in the hand: lub-dub, twice. */
+export function heartbeat() {
+  for (const [at, style] of [[0, 'Medium'], [130, 'Light'], [700, 'Medium'], [830, 'Light']] as const) {
+    setTimeout(() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle[style]), at);
+  }
+}
 
 /**
  * The floating button over her chat: tap to touch her, the way the moment allows
@@ -39,7 +49,8 @@ export function TouchButton({
   touches: CompanionTouch[];
   disabled: boolean;
   accent: string;
-  onTouch: (touch: CompanionTouch, taps: number) => void;
+  /** `pace`: his taps per second across the burst (maestro arousal.py: the game's rhythm). */
+  onTouch: (touch: CompanionTouch, taps: number, pace: number) => void;
 }) {
   // The picked touch stays while it still fits; when the moment changes it, the first one.
   const [picked, setPicked] = useState<string | null>(null);
@@ -50,6 +61,8 @@ export function TouchButton({
   const burst = useRef<ReturnType<typeof setTimeout> | null>(null);
   const count = useRef(0);
   const sending = useRef<CompanionTouch | null>(null);
+  const firstAt = useRef(0);
+  const lastAt = useRef(0);
   const sparkId = useRef(0);
 
   const bump = useSharedValue(1);
@@ -74,7 +87,11 @@ export function TouchButton({
       flush();
     }
     sending.current = touch;
+    const at = nowMs();
+    if (count.current === 0) firstAt.current = at;
+    lastAt.current = at;
     count.current += 1;
+    if (HEARTBEAT.has(touch.id) && count.current === 1) heartbeat();
     setTaps(count.current);
     void Haptics.impactAsync(HEAVY.has(touch.id) ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
     bump.value = withSequence(withTiming(0.86, { duration: 70 }), withSpring(1, { damping: 7, stiffness: 260 }));
@@ -90,10 +107,12 @@ export function TouchButton({
     burst.current = null;
     const touch = sending.current;
     const n = count.current;
+    // Taps per second across the burst; one tap alone is an unhurried pace.
+    const pace = n > 1 ? (n - 1) / Math.max(0.15, (lastAt.current - firstAt.current) / 1000) : 1.5;
     sending.current = null;
     count.current = 0;
     setTaps(0);
-    if (touch && n > 0) onTouch(touch, n);
+    if (touch && n > 0) onTouch(touch, n, Math.round(pace * 10) / 10);
   };
 
   const choose = (touch: CompanionTouch) => {

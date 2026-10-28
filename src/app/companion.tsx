@@ -17,6 +17,7 @@ import { ChatMenu } from '@/components/companion/chat-menu';
 import { StoryViewer } from '@/components/companion/story-viewer';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
+import { ArousalBars } from '@/components/companion/arousal-bars';
 import { PositionButton } from '@/components/companion/position-button';
 import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
@@ -54,6 +55,7 @@ import {
   fetchStories,
   type CompanionStory,
   type CompanionGift,
+  type CompanionArousal,
   type CompanionPosition,
   type CompanionTouch,
   type CompanionDial,
@@ -97,7 +99,7 @@ type Turn = {
   photo?: Photo;
   view?: PhotoView;
   /** A touch from the floating button and how many taps the burst had. */
-  touch?: { touch: CompanionTouch; taps: number };
+  touch?: { touch: CompanionTouch; taps: number; pace?: number };
   /** A position from the position button's wheel. */
   position?: CompanionPosition;
   /** A gift from the tray. */
@@ -118,6 +120,9 @@ const POLL_TRIES = 40;
  * Which companion is open (maestro companion/profiles.py). A switch remounts the chat by
  * its key, so nothing of one (her messages, a turn being polled, her mood) shows in the other.
  */
+/** How long a pause at the edge lasts before she notices (maestro arousal.CLOSE). */
+const PAUSE_MS = 8000;
+
 export default function CompanionScreen() {
   const [who, setWho] = useState(companionWho.get);
   const pick = useCallback((next: string) => {
@@ -180,6 +185,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // The position button's wheel (maestro poses.POSITIONS), only in an intimate moment; [] hides it.
   const [positions, setPositions] = useState<CompanionPosition[]>(seen?.positions ?? []);
   const [position, setPosition] = useState<string | null>(seen?.position ?? null);
+  // The touch game's bars (maestro arousal.py), only in an intimate moment.
+  const [arousal, setArousal] = useState<CompanionArousal | null>(seen?.arousal ?? null);
+  const lastTouchAt = useRef(0);
   const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
   // Where he can touch her from her photo, for the moment (maestro touch.SPOTS).
   const [touchSpots, setTouchSpots] = useState<CompanionTouch[]>(seen?.touch_spots ?? []);
@@ -244,6 +252,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setTouches(c.touches ?? []);
         setPositions(c.positions ?? []);
         setPosition(c.position ?? null);
+        setArousal(c.arousal ?? null);
         setGifts(c.gifts ?? []);
         setTouchSpots(c.touch_spots ?? []);
         setStoryCount(c.stories ?? { count: 0, unseen: 0 });
@@ -378,7 +387,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         image: turn.photo?.base64,
         scene: turn.scene,
         outfit: turn.outfit,
-        touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps } : undefined,
+        touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps, pace: turn.touch.pace } : undefined,
         gift: turn.gift?.id,
         position: turn.position?.id,
         story: turn.reply?.story.id,
@@ -600,6 +609,22 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
 
   const busy = live !== null || snapping !== null;
 
+  // "Don't stop" (maestro arousal.py): she is at the edge, mid-act, and he has not touched her for
+  // PAUSE_MS — the app tells the Mac he stopped, once for this stretch, and she begs.
+  const pausedFor = useRef('');
+  useEffect(() => {
+    if (!arousal?.close || !arousal.pause_line || busy || touches[0]?.id !== 'push') return;
+    const key = `${arousal.climax_at}|${arousal.climaxes}`;
+    if (pausedFor.current === key) return;
+    const wait = Math.max(0, PAUSE_MS - (Date.now() - lastTouchAt.current));
+    const timer = setTimeout(() => {
+      pausedFor.current = key;
+      const line = arousal.pause_line!;
+      void send({ touch: { touch: { id: 'paused', label: '', icon: 'Hand', lines: [line, line, line] }, taps: 1, pace: 0 } });
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [arousal, busy, touches, send]);
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       {/* Her tone as a wash under the header that fades to nothing; a new tone fades in over
@@ -677,6 +702,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           </View>
         ) : (
           <View style={styles.fill}>
+          {arousal ? <ArousalBars arousal={arousal} accent={ROSE} /> : null}
           <ScrollView
             ref={scroller}
             style={styles.fill}
@@ -809,7 +835,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               touches={touches}
               disabled={busy}
               accent={accent}
-              onTouch={(touch, taps) => void send({ touch: { touch, taps } })}
+              onTouch={(touch, taps, pace) => {
+                lastTouchAt.current = Date.now();
+                void send({ touch: { touch, taps, pace } });
+              }}
             />
           ) : null}
           {positions.length && !emoting ? (

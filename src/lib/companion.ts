@@ -145,6 +145,13 @@ export class CompanionRefused extends Error {}
  * A way he can touch her right now (maestro companion/touch.py): the floating button. The Mac
  * decides which fit the moment; `lines` is his action for one tap, a few, and a burst.
  */
+/**
+ * The touch game's two bars (maestro arousal.py), 0–1: hers and his. `climax_at` changes when
+ * she comes (the app plays its climax haptic once per value); `close` = she is at the edge;
+ * `pause_line` is his line when the app sends "paused" for him (the words are the Mac's).
+ */
+export type CompanionArousal = { her: number; his: number; climaxes: number; climax_at: string; close: boolean; pause_line?: string };
+
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
 export type CompanionPosition = { id: string; title: string; about: string; said: string };
 
@@ -197,6 +204,8 @@ export type Companion = {
   /** The position wheel, only in an intimate moment ([] otherwise), and the one they are in. */
   positions?: CompanionPosition[];
   position?: string | null;
+  /** The touch game's bars, only in an intimate moment (null otherwise). */
+  arousal?: CompanionArousal | null;
   /** Where he can touch her from her photo, for the moment (maestro touch.SPOTS). */
   touch_spots?: CompanionTouch[];
   /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */
@@ -526,7 +535,7 @@ export async function streamCompanion(opts: {
   /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
   outfit?: string;
   /** He touches her (POST /companion/touch): a touch's id and how many taps in the burst. */
-  touch?: { id: string; taps: number };
+  touch?: { id: string; taps: number; pace?: number };
   /** He gives her a gift (POST /companion/gift): its id. */
   gift?: string;
   /** He moves the two of them into a position (POST /companion/position): its id. */
@@ -547,7 +556,7 @@ export async function streamCompanion(opts: {
       : outfit !== undefined
         ? { path: 'outfit', id: outfit }
         : touch !== undefined
-          ? { path: 'touch', id: touch.id, taps: touch.taps }
+          ? { path: 'touch', id: touch.id, taps: touch.taps, pace: touch.pace }
           : gift !== undefined
             ? { path: 'gift', id: gift }
             : position !== undefined
@@ -558,7 +567,7 @@ export async function streamCompanion(opts: {
   const body = view
     ? JSON.stringify(view)
     : card
-      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps } : { id: card.id })
+      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : { id: card.id })
       : snap
         ? undefined
         : JSON.stringify({ message: message ?? '', image, live, story });
