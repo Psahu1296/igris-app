@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowUp, Camera, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, MoreHorizontal, RotateCcw, SlidersHorizontal, Smile, Square, UserRound, Volume2, Wrench, X } from 'lucide-react-native';
+import { ArrowUp, Camera, Phone, ChevronDown, ChevronLeft, Clock, Eye, Heart, Mic, MoreHorizontal, RotateCcw, SlidersHorizontal, Smile, Square, UserRound, Volume2, Wrench, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -10,6 +10,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
+import { CallScreen } from '@/components/companion/call-screen';
 import { buzz, ToySheet } from '@/components/companion/toy-sheet';
 import { VoiceNote } from '@/components/companion/voice-note';
 import { DiarySheet } from '@/components/companion/diary-sheet';
@@ -214,7 +215,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
-  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'switch' | 'menu' | null>(null);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'call' | 'switch' | 'menu' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -699,6 +700,18 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             </Meta>
             {eta ? <CountdownChip key={eta} eta={eta} accent={ROSE} /> : null}
           </Pressable>
+          {name !== null && lane === 'local' && listening.available ? (
+            // A voice call with her (components/companion/call-screen.tsx): hands-free turns in her voice.
+            <PressableScale
+              onPress={() => setSheet('call')}
+              disabled={busy}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${name}`}
+              style={styles.iconButton}>
+              <Phone size={17} color={Palette.text} />
+            </PressableScale>
+          ) : null}
           {name !== null && lane === 'local' ? (
             // Live, Director, voice and Clear live in one sheet (components/companion/chat-menu.tsx);
             // a dot keeps Live or Director being on visible from the header.
@@ -921,6 +934,20 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           />
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
+        {sheet === 'call' && name ? (
+          <CallScreen
+            lane={lane}
+            name={name}
+            face={face}
+            accent={ROSE}
+            listen={listening.start}
+            stopListening={listening.stop}
+            onEnd={() => {
+              setSheet(null);
+              void sync();
+            }}
+          />
+        ) : null}
         {sheet === 'toy' && toy ? (
           <ToySheet
             toy={toy}

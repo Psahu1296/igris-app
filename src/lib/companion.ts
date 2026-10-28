@@ -574,6 +574,8 @@ export async function streamCompanion(opts: {
   gift?: string;
   /** He moves the two of them into a position (POST /companion/position): its id. */
   position?: string;
+  /** A voice call turn (maestro voicenote.CALL): her reply is written to be said out loud. */
+  call?: boolean;
   /** He sets her toy from his remote (POST /companion/toy). */
   toy?: { level: number; pattern: string };
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
@@ -584,7 +586,7 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, position, toy, story, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, position, toy, call = false, story, live = false, view, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card =
     scene !== undefined
@@ -608,7 +610,7 @@ export async function streamCompanion(opts: {
       ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : card.path === 'toy' ? toy : { id: card.id })
       : snap
         ? undefined
-        : JSON.stringify({ message: message ?? '', image, live, story });
+        : JSON.stringify({ message: message ?? '', image, live, story, call });
   const run = (token: string) =>
     streamFetch(`${urlFor(lane)}${whoPath(`/companion/${path}`)}`, {
       method: 'POST',
