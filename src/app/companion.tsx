@@ -281,7 +281,13 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setOpened(c.seen ?? []);
         setOthers((c.companions ?? []).filter((o) => o.id !== c.id));
         setEveryone(c.companions ?? []);
-        setMessages(view.messages);
+        // The Mac sends the newest 200 (maestro SHOWN_MESSAGES): keep what is already on screen from
+        // before them, or every reply slid the window and the top two vanished, read as "deleted".
+        setMessages((on) => {
+          const first = view.messages[0]?.at;
+          const older = first ? on.filter((m) => m.at < first) : [];
+          return [...older, ...view.messages];
+        });
         setLive(view.live);
         setSnapping(view.snapping);
         setComing(c.photos ?? null);
