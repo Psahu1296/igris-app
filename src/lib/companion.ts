@@ -145,6 +145,9 @@ export class CompanionRefused extends Error {}
  * A way he can touch her right now (maestro companion/touch.py): the floating button. The Mac
  * decides which fit the moment; `lines` is his action for one tap, a few, and a burst.
  */
+/** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
+export type CompanionPosition = { id: string; title: string; about: string; said: string };
+
 export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] | [string, string, string, string] };
 
 /** His action for a burst of taps, the same thresholds as touch.line on the Mac. */
@@ -191,6 +194,9 @@ export type Companion = {
   photos?: CompanionPhotosComing | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
+  /** The position wheel, only in an intimate moment ([] otherwise), and the one they are in. */
+  positions?: CompanionPosition[];
+  position?: string | null;
   /** Where he can touch her from her photo, for the moment (maestro touch.SPOTS). */
   touch_spots?: CompanionTouch[];
   /** Gifts he can give her now. Missing on a maestro from before 2026-10-27. */
@@ -523,6 +529,8 @@ export async function streamCompanion(opts: {
   touch?: { id: string; taps: number };
   /** He gives her a gift (POST /companion/gift): its id. */
   gift?: string;
+  /** He moves the two of them into a position (POST /companion/position): its id. */
+  position?: string;
   /** Live mode: she sends a photo with this reply. Ignored by the camera button and scenes. */
   live?: boolean;
   /** One of her photos again from his eyes or hers (maestro POST /companion/view): no words,
@@ -531,7 +539,7 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, story, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, position, story, live = false, view, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card =
     scene !== undefined
@@ -542,7 +550,9 @@ export async function streamCompanion(opts: {
           ? { path: 'touch', id: touch.id, taps: touch.taps }
           : gift !== undefined
             ? { path: 'gift', id: gift }
-            : null;
+            : position !== undefined
+              ? { path: 'position', id: position }
+              : null;
   const snap = !card && !view && message === undefined && image === undefined;
   const path = view ? 'view' : card ? card.path : snap ? 'snap' : 'stream';
   const body = view

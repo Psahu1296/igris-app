@@ -17,6 +17,7 @@ import { ChatMenu } from '@/components/companion/chat-menu';
 import { StoryViewer } from '@/components/companion/story-viewer';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
+import { PositionButton } from '@/components/companion/position-button';
 import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
@@ -53,6 +54,7 @@ import {
   fetchStories,
   type CompanionStory,
   type CompanionGift,
+  type CompanionPosition,
   type CompanionTouch,
   type CompanionDial,
   type CompanionListing,
@@ -96,6 +98,8 @@ type Turn = {
   view?: PhotoView;
   /** A touch from the floating button and how many taps the burst had. */
   touch?: { touch: CompanionTouch; taps: number };
+  /** A position from the position button's wheel. */
+  position?: CompanionPosition;
   /** A gift from the tray. */
   gift?: CompanionGift;
   /** A reply typed in the story viewer, and the story it answers. */
@@ -173,6 +177,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
+  // The position button's wheel (maestro poses.POSITIONS), only in an intimate moment; [] hides it.
+  const [positions, setPositions] = useState<CompanionPosition[]>(seen?.positions ?? []);
+  const [position, setPosition] = useState<string | null>(seen?.position ?? null);
   const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
   // Where he can touch her from her photo, for the moment (maestro touch.SPOTS).
   const [touchSpots, setTouchSpots] = useState<CompanionTouch[]>(seen?.touch_spots ?? []);
@@ -235,6 +242,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setScenes(c.scenes ?? []);
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
+        setPositions(c.positions ?? []);
+        setPosition(c.position ?? null);
         setGifts(c.gifts ?? []);
         setTouchSpots(c.touch_spots ?? []);
         setStoryCount(c.stories ?? { count: 0, unseen: 0 });
@@ -316,7 +325,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ? turn.reply.text
         : turn.say
           ? turn.say
-          : turn.snap || turn.view || turn.touch || turn.gift || turn.scene !== undefined || turn.outfit !== undefined
+          : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.scene !== undefined || turn.outfit !== undefined
           ? undefined
           : draft.trim();
     // The same double-submit guard as the composer: one Enter can fire submit twice.
@@ -336,6 +345,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     // A touch is saved on the Mac as his action; shown at once, the same line the Mac keeps.
     if (turn.touch) setMessages((m) => [...m, { role: 'you', text: touchLine(turn.touch!.touch, turn.touch!.taps), at }]);
     if (turn.gift) setMessages((m) => [...m, { role: 'you', text: turn.gift!.line, at }]);
+    if (turn.position) {
+      setMessages((m) => [...m, { role: 'you', text: turn.position!.said, at }]);
+      setPosition(turn.position.id);
+    }
     setLive('');
     let words = '';
     let felt = 0;
@@ -367,6 +380,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         outfit: turn.outfit,
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps } : undefined,
         gift: turn.gift?.id,
+        position: turn.position?.id,
         story: turn.reply?.story.id,
         view: turn.view,
         live: liveOn,
@@ -796,6 +810,15 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               disabled={busy}
               accent={accent}
               onTouch={(touch, taps) => void send({ touch: { touch, taps } })}
+            />
+          ) : null}
+          {positions.length && !emoting ? (
+            <PositionButton
+              positions={positions}
+              current={position}
+              disabled={busy}
+              accent={accent}
+              onPick={(picked) => void send({ position: picked })}
             />
           ) : null}
           </View>
