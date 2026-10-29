@@ -1,4 +1,4 @@
-import { ChevronRight, CircleDashed, Clapperboard, Radio, Trash2, UserRound, Volume2, type LucideIcon } from 'lucide-react-native';
+import { ChevronRight, CircleDashed, Clapperboard, Radio, SlidersHorizontal, Trash2, UserRound, Volume2, type LucideIcon } from 'lucide-react-native';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { BottomSheet } from '@/components/companion/bottom-sheet';
@@ -25,6 +25,7 @@ export function ChatMenu({
   onStories,
   onLive,
   onDirector,
+  onQuality,
   onAloud,
   onClear,
   onClose,
@@ -41,6 +42,7 @@ export function ChatMenu({
   onStories: () => void;
   onLive: () => void;
   onDirector: () => void;
+  onQuality: () => void;
   onAloud: () => void;
   onClear: () => void;
   onClose: () => void;
@@ -54,6 +56,7 @@ export function ChatMenu({
         ) : null}
         <Row icon={Radio} accent={accent} label="Live photos" hint="A photo with every reply. Replies take longer." on={live} onToggle={onLive} />
         <Row icon={Clapperboard} accent={accent} label="Director" hint="The camera button lets you pick each part of her photo." on={directing} onToggle={onDirector} />
+        <Link icon={SlidersHorizontal} accent={accent} label="Photo detail" hint="How many drawing steps a photo gets: more detail, slower." onPress={onQuality} />
         {canSpeak ? (
           <Row icon={Volume2} accent={accent} label="Read her replies aloud" hint="On-device voice." on={aloud} onToggle={onAloud} />
         ) : null}

@@ -913,3 +913,22 @@ export function predictBars(bars: CompanionArousal, touch: CompanionTouch, taps:
   const his = bars.hold ? bars.his : Math.min(0.97, bars.his + (touch.his_gain ?? 0) * taps * hisPace);
   return { ...bars, her, his, close: her >= 0.85 };
 }
+
+/** How detailed her photos are (maestro companion/quality.py): the drawing steps, their range and the named presets. */
+export type PhotoQuality = { steps: number; default: number; min: number; max: number; presets: { id: string; label: string; steps: number }[] };
+
+export async function fetchPhotoQuality(lane: Lane): Promise<PhotoQuality> {
+  const res = await authedFetch(lane, '/companion/photo-quality');
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for photo detail." : `The Mac refused (${res.status}).`);
+  return (await res.json()) as PhotoQuality;
+}
+
+export async function setPhotoQuality(lane: Lane, steps: number): Promise<PhotoQuality> {
+  const res = await authedFetch(lane, '/companion/photo-quality', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ steps }),
+  });
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return (await res.json()) as PhotoQuality;
+}

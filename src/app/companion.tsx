@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DrawnPicture } from '@/components/cards/drawn-picture';
+import { PhotoQualitySheet } from '@/components/companion/photo-quality-sheet';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
 import { CallScreen } from '@/components/companion/call-screen';
 import { buzz, ToySheet } from '@/components/companion/toy-sheet';
@@ -226,7 +227,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
-  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'call' | 'switch' | 'menu' | null>(null);
+  const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'call' | 'switch' | 'menu' | 'quality' | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -1031,6 +1032,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onClose={() => setSheet(null)}
           />
         ) : null}
+        {sheet === 'quality' ? <PhotoQualitySheet lane={lane} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'prefs' ? <PrefsSheet lane={lane} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {sheet === 'diary' && name ? <DiarySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
         {watching && name ? (
@@ -1066,6 +1068,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             }}
             onLive={toggleLive}
             onDirector={toggleDirector}
+            onQuality={() => setSheet('quality')}
             onAloud={() => {
               void Haptics.selectionAsync();
               voiceMode.set(!aloud);
