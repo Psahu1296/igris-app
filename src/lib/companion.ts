@@ -325,15 +325,17 @@ export function shown(c: Companion): {
 /**
  * A message cut into what is said and what is done: feelings and body language go between
  * asterisks ("*sharma ke*", maestro companion/persona.py), hers and his alike, and the
- * chat shows those in italics without the asterisks. An unclosed "*" (half a message, while
+ * chat shows those in italics without the asterisks, across line breaks too. An unclosed "*" (half a message, while
  * it streams) stays as written.
  */
 export function emotes(text: string): { text: string; action: boolean; sound?: boolean }[] {
   const out: { text: string; action: boolean; sound?: boolean }[] = [];
   let at = 0;
-  for (const m of text.matchAll(/\*([^*\n]{1,120})\*/g)) {
+  // An action may run over a line break or two (he types it across lines, with spaces), but not over a
+  // blank line: that is a new paragraph, and a stray "*" must not swallow it.
+  for (const m of text.matchAll(/\*((?:(?!\n\s*\n)[^*]){1,400})\*/g)) {
     if (m.index > at) out.push(...voiced(text.slice(at, m.index)));
-    out.push({ text: m[1].trim(), action: true });
+    out.push({ text: m[1].replace(/\s+/g, ' ').trim(), action: true });
     at = m.index + m[0].length;
   }
   if (at < text.length) out.push(...voiced(text.slice(at)));
