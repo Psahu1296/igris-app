@@ -64,6 +64,7 @@ import {
   type CompanionGift,
   type CompanionArousal,
   type CompanionEnergy,
+  predictBars,
   type CompanionPosition,
   type CompanionTouch,
   type CompanionToy,
@@ -434,7 +435,10 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         live: liveOn,
         signal: controller.signal,
         onEvent: (event) => {
-          if (event.kind === 'token') {
+          if (event.kind === 'bars') {
+            setArousal(event.arousal);
+            setEnergy(event.energy);
+          } else if (event.kind === 'token') {
             if (retaking) return; // a thrown-away draft is never shown, only the one she keeps
             words += event.text;
             setLive(words);
@@ -664,6 +668,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const sendTouch = useCallback(
     (touch: CompanionTouch, taps: number, pace: number) => {
       lastTouchAt.current = Date.now();
+      // The bars move now, with the Mac's own numbers; its frame corrects them a moment later.
+      setArousal((a) => (a ? predictBars(a, touch, taps, pace) : a));
       if (!busyNow.current) {
         void send({ touch: { touch, taps, pace } });
         return;

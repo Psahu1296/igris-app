@@ -201,7 +201,7 @@ export type CompanionEnergy = {
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
 export type CompanionPosition = { id: string; title: string; about: string; said: string };
 
-export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] | [string, string, string, string] | string[] };
+export type CompanionTouch = { id: string; label: string; icon: string; /** What a tap adds to her bar and his (maestro arousal.GAIN): the phone moves the bars at once. */ gain?: number; his_gain?: number; lines: [string, string, string] | [string, string, string, string] | string[] };
 
 /** His action for a burst of taps, the same thresholds as touch.line on the Mac. */
 export const touchLine = (touch: CompanionTouch, taps: number) =>
@@ -551,6 +551,8 @@ export function useCompanionName(lane: Lane, active: boolean): string | null {
 
 export type CompanionEvent =
   | { kind: 'typing' }
+  /** The bars after his touch, the turn's first frame: shown before she has written anything. */
+  | { kind: 'bars'; arousal: CompanionArousal; energy: CompanionEnergy | null }
   /** Her words so far, as the model writes them. */
   | { kind: 'token'; text: string }
   /** The reply as saved. Can differ from the tokens: maestro replaces a reply that breaks its age rule. */
@@ -701,6 +703,8 @@ export async function streamCompanion(opts: {
         until?: string;
         seconds?: number;
         voice?: boolean;
+        arousal?: CompanionArousal;
+        energy?: CompanionEnergy | null;
       };
       try {
         data = JSON.parse(frame.data);
@@ -708,6 +712,7 @@ export async function streamCompanion(opts: {
         continue; // a malformed frame is not worth losing the reply over
       }
       if (frame.event === 'status') onEvent({ kind: 'typing' });
+      else if (frame.event === 'bars' && data.arousal) onEvent({ kind: 'bars', arousal: data.arousal, energy: data.energy ?? null });
       else if (frame.event === 'token' && data.text) onEvent({ kind: 'token', text: data.text });
       else if (frame.event === 'response' && data.message) onEvent({ kind: 'reply', text: data.message, seconds: data.seconds, voice: data.voice === true });
       else if (frame.event === 'retake') onEvent({ kind: 'retake' });
@@ -894,3 +899,17 @@ export async function setPref(lane: Lane, id: string, answer: PrefItem['answer']
 
 /** Her toy's remote (maestro companion/toy.py): its level now (0 = off) and the patterns, labelled on the Mac. */
 export type CompanionToy = { level: number; pattern: string; max: number; patterns: { id: string; label: string }[] };
+
+/**
+ * Her bars as they will be after a burst of taps, worked out on the phone with the Mac's own numbers (maestro
+ * arousal.touched: the touch's gain per tap, faster at a quick pace, quicker after each climax) so they move the
+ * instant he taps. Not for finishing or holding: the Mac's frame replaces this a moment later.
+ */
+export function predictBars(bars: CompanionArousal, touch: CompanionTouch, taps: number, pace: number): CompanionArousal {
+  if (touch.id.startsWith('finish-')) return bars;
+  const herPace = pace < 1.2 ? 0.85 : pace <= 3 ? 1 : 1.25;
+  const hisPace = pace < 1.2 ? 0.6 : pace <= 3 ? 1 : 1 + (pace - 3) * 0.45;
+  const her = Math.min(1, bars.her + (touch.gain ?? 0.025) * taps * herPace * (1 + 0.2 * Math.min(bars.climaxes, 3)));
+  const his = bars.hold ? bars.his : Math.min(0.97, bars.his + (touch.his_gain ?? 0) * taps * hisPace);
+  return { ...bars, her, his, close: her >= 0.85 };
+}
