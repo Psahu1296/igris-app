@@ -15,6 +15,7 @@ import { TypingIndicator } from '@/components/typing-indicator';
 import { Meta, Title } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
 import {
+  chooseAppearance,
   deleteMessage,
   fetchPhotos,
   fetchProfile,
@@ -22,6 +23,9 @@ import {
   makeTrainingSet,
   ROSE,
   ROSE_SOFT,
+  takeHerTo,
+  type ChoiceGroup,
+  type ChoicesCard,
   type CompanionProfile,
   type ProfileCard,
   type ProfilePhoto,
@@ -275,7 +279,7 @@ export default function CompanionProfileScreen() {
                 </View>
               ) : null}
 
-              <Sections cards={rest} />
+              <Sections cards={rest} lane={lane} />
 
               <View style={styles.photosHead}>
                 <View style={styles.photosTitleRow}>
@@ -452,7 +456,7 @@ function Hero({ lane, profile, mood, onOpen }: { lane: Lane; profile: CompanionP
 }
 
 /** Cards grouped under their section headings, in the order the Mac sent them. */
-function Sections({ cards }: { cards: ProfileCard[] }) {
+function Sections({ cards, lane }: { cards: ProfileCard[]; lane: Lane }) {
   const groups: { title: string; cards: ProfileCard[] }[] = [];
   for (const card of cards) {
     const title = card.section ?? '';
@@ -473,7 +477,74 @@ function Sections({ cards }: { cards: ProfileCard[] }) {
           ) : null}
           <View style={styles.cards}>
             {group.cards.map((card) => (
-              <Card key={card.title} card={card} />
+              <Card key={card.title} card={card} lane={lane} />
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Groups of options he taps (maestro companion/appearance.py and goto.py): how she looks (each tap is saved
+ * on the Mac, and she and her photos change), or where to take her (one tap puts you there, she says she will
+ * come, and the chat opens on her answer). The words are the Mac's.
+ */
+function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; lane: Lane }) {
+  const [groups, setGroups] = useState(card.groups);
+  const [busy, setBusy] = useState(false);
+
+  const pick = (group: ChoiceGroup, optionId: string) => {
+    if (busy) return;
+    void Haptics.selectionAsync();
+    if (card.action === 'go') {
+      setBusy(true);
+      takeHerTo(lane, optionId)
+        .then(() => router.back())
+        .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT))
+        .finally(() => setBusy(false));
+      return;
+    }
+    // Optimistic: the chip moves at once, the Mac's card replaces it.
+    setGroups((all) =>
+      all.map((g) =>
+        g.id !== group.id
+          ? g
+          : { ...g, options: g.options.map((o) => (o.id === optionId ? { ...o, on: !o.on } : g.multi ? o : { ...o, on: false })) },
+      ),
+    );
+    chooseAppearance(lane, group.id, optionId)
+      .then((got) => setGroups(got.groups))
+      .catch((e: unknown) => {
+        setGroups(card.groups);
+        ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT);
+      });
+  };
+
+  return (
+    <View style={[styles.card, styles.full]}>
+      <View style={styles.cardTitleRow}>
+        <View style={styles.badgeSmall}>
+          <Glyph id={card.icon} size={13} color={ROSE} />
+        </View>
+        <Text style={styles.cardTitle}>{card.title}</Text>
+      </View>
+      {card.caption ? <Text style={styles.cardCaption}>{card.caption}</Text> : null}
+      {groups.map((group) => (
+        <View key={group.id} style={styles.choiceGroup}>
+          <Text style={styles.choiceGroupTitle}>{group.title}</Text>
+          <View style={styles.choiceRow}>
+            {group.options.map((o) => (
+              <Pressable
+                key={o.id}
+                onPress={() => pick(group, o.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: o.on }}
+                accessibilityLabel={`${group.title}: ${o.label}`}
+                style={[styles.choice, o.on && styles.choiceOn]}>
+                <Text style={[styles.choiceText, o.on && styles.choiceTextOn]}>{o.label}</Text>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -549,7 +620,8 @@ function Ring({ value, max }: { value: number; max: number }) {
 }
 
 /** One card, drawn by its kind; the words and the icon id are the Mac's. */
-function Card({ card }: { card: ProfileCard }) {
+function Card({ card, lane }: { card: ProfileCard; lane: Lane }) {
+  if (card.kind === 'choices') return <ChoicesPanel card={card} lane={lane} />;
   if (card.kind === 'meter') {
     return (
       <View style={[styles.card, styles.half]}>
@@ -1058,6 +1130,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     flexShrink: 1,
   },
+  choiceGroup: { gap: 6 },
+  choiceGroupTitle: { fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  choice: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: Palette.hairline },
+  choiceOn: { borderColor: ROSE, backgroundColor: `${ROSE}26` },
+  choiceText: { fontFamily: Font.ui, color: Palette.text, ...Type.micro },
+  choiceTextOn: { color: ROSE, fontFamily: Font.uiMedium },
   cardCaption: {
     fontFamily: Font.ui,
     color: Palette.faint,

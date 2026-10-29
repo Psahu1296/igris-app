@@ -11,6 +11,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { DrawnPicture } from '@/components/cards/drawn-picture';
 import { PhotoQualitySheet } from '@/components/companion/photo-quality-sheet';
 import { PrefsSheet } from '@/components/companion/prefs-sheet';
+import { TagBar } from '@/components/companion/tag-bar';
 import { CallScreen } from '@/components/companion/call-screen';
 import { buzz, ToySheet } from '@/components/companion/toy-sheet';
 import { VoiceNote } from '@/components/companion/voice-note';
@@ -37,7 +38,10 @@ import {
   bubbles,
   companionWho,
   CompanionRefused,
+  composeMessage,
   emotes,
+  fetchTags,
+  tagLabel,
   fetchCompanion,
   forgetCompanion,
   lastCompanion,
@@ -62,6 +66,8 @@ import {
   touchLine,
   fetchStories,
   type CompanionStory,
+  type MessageTag,
+  type TagPart,
   type CompanionGift,
   type CompanionArousal,
   type CompanionEnergy,
@@ -184,6 +190,20 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   );
   // The row of his own actions (*hugs you*) above the message box, opened by the smile button.
   const [emoting, setEmoting] = useState(false);
+  // His message tags (maestro companion/tags.py): the chips, the parts already wrapped, and the armed tag.
+  const [msgTags, setMsgTags] = useState<MessageTag[]>([]);
+  const [parts, setParts] = useState<TagPart[]>([]);
+  const [armed, setArmed] = useState<MessageTag | null>(null);
+  useEffect(() => {
+    if (lane !== 'local') return;
+    let live = true;
+    fetchTags(lane)
+      .then((got) => live && setMsgTags(got))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [lane]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // Her reply in flight: null = idle, '' = typing, text = words so far.
@@ -375,7 +395,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           ? turn.say
           : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.toy || turn.scene !== undefined || turn.outfit !== undefined
           ? undefined
-          : draft.trim();
+          : composeMessage(parts, armed, draft);
     // The same double-submit guard as the composer: one Enter can fire submit twice.
     const now = Date.now();
     if ((text === '' && !turn.photo) || live !== null || snapping || now - lastSend.current < 800) return;
@@ -385,7 +405,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
     setSendError(null);
     const at = new Date().toISOString();
     if (text !== undefined) {
-      if (!turn.reply) setDraft('');
+      if (!turn.reply) {
+        setDraft('');
+        setParts([]);
+        setArmed(null);
+      }
       const image = turn.photo ? { name: '', model: '', scene: '', his: true, uri: turn.photo.uri } : undefined;
       const story = turn.reply ? { id: turn.reply.story.id, name: turn.reply.story.image.name, caption: turn.reply.story.caption } : undefined;
       setMessages((m) => [...m, { role: 'you', text, at, image, story }]);
@@ -505,7 +529,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         if (mounted.current) void sync();
       }
     }
-  }, [draft, live, snapping, lane, sync, liveOn, speak, quiet]);
+  }, [draft, parts, armed, live, snapping, lane, sync, liveOn, speak, quiet]);
 
   const sendPhoto = async (source: 'camera' | 'library') => {
     try {
@@ -1107,6 +1131,28 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onSent={(retook) => (retook ? queued('Retaking it with the fixes…') : queued('Noted for the next photos.'))}
           />
         ) : null}
+        <TagBar
+          tags={lane === 'local' ? msgTags : []}
+          parts={parts}
+          armed={armed}
+          accent={ROSE}
+          disabled={name === null}
+          onTag={(tag) => {
+            void Haptics.selectionAsync();
+            if (draft.trim()) {
+              // The words in the box become this tag's part; the box is free for the next.
+              setParts((p) => [...p, { tag, text: draft.trim() }]);
+              setDraft('');
+              setArmed(null);
+            } else setArmed((a) => (a?.id === tag.id ? null : tag));
+          }}
+          onPreset={(tag, text) => {
+            void Haptics.selectionAsync();
+            setParts((p) => [...p, { tag, text }]);
+            setArmed(null);
+          }}
+          onRemove={(i) => setParts((p) => p.filter((_, j) => j !== i))}
+        />
         <View style={styles.composer}>
           <PressableScale
             onPress={() => (directing ? setDirected({ like: null }) : void send({ snap: true }))}
@@ -1146,13 +1192,13 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               style={[styles.send, styles.stop]}>
               <Square size={14} color={Palette.ground} fill={Palette.ground} />
             </PressableScale>
-          ) : draft.trim() || !listening.available ? (
+          ) : draft.trim() || parts.length > 0 || !listening.available ? (
             <PressableScale
               onPress={() => void send()}
-              disabled={!draft.trim() || busy}
+              disabled={(!draft.trim() && parts.length === 0) || busy}
               accessibilityRole="button"
               accessibilityLabel="Send"
-              style={[styles.send, { opacity: draft.trim() && !busy ? 1 : 0.4 }]}>
+              style={[styles.send, { opacity: (draft.trim() || parts.length > 0) && !busy ? 1 : 0.4 }]}>
               <ArrowUp size={18} color={Palette.ground} />
             </PressableScale>
           ) : (
@@ -1336,7 +1382,11 @@ function Bubble({
       {text ? (
         <Text selectable style={mine ? styles.mineText : styles.hersText}>
           {emotes(text).map((part, i) =>
-                part.action ? (
+                part.tag ? (
+                  <Text key={i} style={styles.tagPart}>
+                    {`${tagLabel(part.tag)}: ${part.text}`}
+                  </Text>
+                ) : part.action ? (
                   <Text key={i} style={styles.action}>
                     {part.text}
                   </Text>
@@ -1587,6 +1637,8 @@ const styles = StyleSheet.create({
   hersText: { fontFamily: Font.ui, color: Palette.text, ...Type.ask },
   // What she does, between her words: a real italic face, a shade quieter than speech.
   action: { fontFamily: Font.voiceItalic, color: Palette.muted },
+  // One of his tags in a bubble (maestro companion/tags.py): the label and his words, tinted.
+  tagPart: { fontFamily: Font.uiMedium, color: ROSE },
   // A sound she makes (ahh, mmm, huhh?!): her voice, not her words, so it leans and glows a little.
   sound: { fontFamily: Font.voiceItalic, color: ROSE, letterSpacing: 0.6 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Space.xl },

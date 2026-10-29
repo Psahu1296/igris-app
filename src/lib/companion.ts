@@ -347,14 +347,17 @@ export function shown(c: Companion): {
  * chat shows those in italics without the asterisks, across line breaks too. An unclosed "*" (half a message, while
  * it streams) stays as written.
  */
-export function emotes(text: string): { text: string; action: boolean; sound?: boolean }[] {
-  const out: { text: string; action: boolean; sound?: boolean }[] = [];
+export function emotes(text: string): { text: string; action: boolean; sound?: boolean; tag?: string }[] {
+  const out: { text: string; action: boolean; sound?: boolean; tag?: string }[] = [];
   let at = 0;
   // An action may run over a line break or two (he types it across lines, with spaces), but not over a
-  // blank line: that is a new paragraph, and a stray "*" must not swallow it.
-  for (const m of text.matchAll(/\*((?:(?!\n\s*\n)[^*]){1,400})\*/g)) {
+  // blank line: that is a new paragraph, and a stray "*" must not swallow it. A [tag: text] is one of his
+  // tags (maestro companion/tags.py, known from GET /companion/tags): shown as a labelled part, not brackets.
+  for (const m of text.matchAll(/\[([a-z]+):\s*([^[\]\n]{1,400}?)\s*\]|\*((?:(?!\n\s*\n)[^*]){1,400})\*/gi)) {
+    if (m[1] && !tagLabels.has(m[1].toLowerCase())) continue;
     if (m.index > at) out.push(...voiced(text.slice(at, m.index)));
-    out.push({ text: m[1].replace(/\s+/g, ' ').trim(), action: true });
+    if (m[1]) out.push({ text: m[2], action: false, tag: m[1].toLowerCase() });
+    else out.push({ text: m[3].replace(/\s+/g, ' ').trim(), action: true });
     at = m.index + m[0].length;
   }
   if (at < text.length) out.push(...voiced(text.slice(at)));
@@ -828,6 +831,9 @@ export async function correctPhoto(lane: Lane, name: string, wrong: string[], re
  */
 type CardLook = { icon?: string; section?: string };
 
+export type ChoiceGroup = { id: string; title: string; multi: boolean; options: { id: string; label: string; on: boolean }[] };
+export type ChoicesCard = { kind: 'choices'; title: string; action: 'appearance' | 'go'; caption?: string; groups: ChoiceGroup[] };
+
 export type ProfileCard = CardLook &
   (
     | { kind: 'meter'; title: string; value: number; caption?: string }
@@ -838,6 +844,8 @@ export type ProfileCard = CardLook &
     | { kind: 'calendar'; title: string; value: { date: string; level: number }[] }
     /** Every badge, earned (`got`) or still to get. */
     | { kind: 'badges'; title: string; value: { id: string; title: string; icon: string; got: boolean }[] }
+    /** Groups of options he taps (maestro companion/appearance.py, goto.py): how she looks, where she goes. */
+    | ChoicesCard
   );
 
 export type CompanionProfile = {
@@ -931,4 +939,57 @@ export async function setPhotoQuality(lane: Lane, steps: number): Promise<PhotoQ
   });
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
   return (await res.json()) as PhotoQuality;
+}
+
+/** One tag he can wrap a part of his message in (maestro companion/tags.py): the chip, its presets, how to wrap. */
+export type MessageTag = { id: string; label: string; hint: string; presets: string[]; open: string; close: string; kept: boolean };
+/** A part he has already wrapped, waiting to be sent with the rest of the message. */
+export type TagPart = { tag: MessageTag; text: string };
+
+// Labels by id, filled by fetchTags, so a bubble can show "React: shy" instead of the brackets.
+const tagLabels = new Map<string, string>();
+export const tagLabel = (id: string): string => tagLabels.get(id) ?? id;
+
+export async function fetchTags(lane: Lane): Promise<MessageTag[]> {
+  const res = await authedFetch(lane, '/companion/tags');
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for tags." : `The Mac refused (${res.status}).`);
+  const { tags } = (await res.json()) as { tags: MessageTag[] };
+  tags.forEach((t) => tagLabels.set(t.id, t.label));
+  return tags;
+}
+
+/** `text` wrapped the way the tag says: [react: …] or *…*. */
+export const wrapTag = (tag: MessageTag, text: string): string => `${tag.open}${text.trim()}${tag.close}`;
+
+/** The message that is sent: the wrapped parts, then what is still in the box (wrapped too when a tag is armed). */
+export const composeMessage = (parts: TagPart[], armed: MessageTag | null, draft: string): string =>
+  [...parts.map((p) => wrapTag(p.tag, p.text)), armed && draft.trim() ? wrapTag(armed, draft) : draft.trim()].filter(Boolean).join(' ');
+
+/** One choice of how she looks (a multi group toggles it); the Mac answers with the card as it is now. */
+export async function chooseAppearance(lane: Lane, group: string, choice: string): Promise<ChoicesCard> {
+  const res = await authedFetch(lane, whoPath('/companion/appearance'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group, choice }),
+  });
+  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for this." : `The Mac refused (${res.status}).`);
+  return (await res.json()) as ChoicesCard;
+}
+
+/**
+ * Takes her somewhere: the Mac puts the two of them there and she answers that she will come. The answer is a
+ * turn the Mac writes whether or not this screen listens (it is a task there), so the response is not read:
+ * the chat picks it up from the Mac when it opens.
+ */
+export async function takeHerTo(lane: Lane, id: string): Promise<void> {
+  const controller = new AbortController();
+  const res = await authedFetch(lane, whoPath('/companion/go'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+    signal: controller.signal,
+  });
+  controller.abort();
+  if (res.status === 409) throw new Error('She is busy with another turn.');
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
