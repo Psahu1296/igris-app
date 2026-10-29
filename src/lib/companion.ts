@@ -189,6 +189,15 @@ export type CompanionArousal = {
   perfect?: boolean;
 };
 
+/** How worn out she is, in any moment (maestro fatigue.indicator): `energy` 1 full to 0 gone; `until` when she wakes. */
+export type CompanionEnergy = {
+  stage: '' | 'numb' | 'drowsy' | 'out';
+  energy: number;
+  kind: '' | 'faint' | 'sleep';
+  until?: string | null;
+  tags: ('sore' | 'slow')[];
+};
+
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
 export type CompanionPosition = { id: string; title: string; about: string; said: string };
 
@@ -249,6 +258,8 @@ export type Companion = {
   position?: string | null;
   /** The touch game's bars, only in an intimate moment (null otherwise). */
   arousal?: CompanionArousal | null;
+  /** How worn out she is, whatever the moment. Missing on an older maestro. */
+  energy?: CompanionEnergy | null;
   /** When he said he will be there (maestro countdown.py); null when he is not on his way. */
   eta?: string | null;
   /** Where he can touch her from her photo, for the moment (maestro touch.SPOTS). */

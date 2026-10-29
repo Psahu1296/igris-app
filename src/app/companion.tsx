@@ -22,6 +22,7 @@ import { StoryViewer } from '@/components/companion/story-viewer';
 import { SwitchSheet } from '@/components/companion/switch-sheet';
 import { CompanionTray } from '@/components/companion/tray';
 import { ArousalBars } from '@/components/companion/arousal-bars';
+import { EnergyChip } from '@/components/companion/energy-chip';
 import { CountdownChip } from '@/components/companion/countdown-chip';
 import { PositionButton } from '@/components/companion/position-button';
 import { TouchButton } from '@/components/companion/touch-button';
@@ -62,6 +63,7 @@ import {
   type CompanionStory,
   type CompanionGift,
   type CompanionArousal,
+  type CompanionEnergy,
   type CompanionPosition,
   type CompanionTouch,
   type CompanionToy,
@@ -205,6 +207,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const [eta, setEta] = useState<string | null>(seen?.eta ?? null);
   // The touch game's bars (maestro arousal.py), only in an intimate moment.
   const [arousal, setArousal] = useState<CompanionArousal | null>(seen?.arousal ?? null);
+  // How worn out she is (maestro fatigue.py), in any moment.
+  const [energy, setEnergy] = useState<CompanionEnergy | null>(seen?.energy ?? null);
   const lastTouchAt = useRef(0);
   const [gifts, setGifts] = useState<CompanionGift[]>(seen?.gifts ?? []);
   // Where he can touch her from her photo, for the moment (maestro touch.SPOTS).
@@ -278,6 +282,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setPosition(c.position ?? null);
         setEta(c.eta ?? null);
         setArousal(c.arousal ?? null);
+        setEnergy(c.energy ?? null);
         setGifts(c.gifts ?? []);
         setTouchSpots(c.touch_spots ?? []);
         setStoryCount(c.stories ?? { count: 0, unseen: 0 });
@@ -784,6 +789,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           </View>
         ) : (
           <View style={styles.fill}>
+          {energy ? <EnergyChip energy={energy} /> : null}
           {arousal ? (
             <ArousalBars
               arousal={arousal}
