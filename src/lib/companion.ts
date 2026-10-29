@@ -75,7 +75,7 @@ export const TONE_WEATHER: Record<string, string> = {
 };
 
 /** One of her stories: a photo of her own day, kept 24 hours on the Mac (maestro companion/stories.py). */
-export type CompanionStory = { id: string; at: string; caption: string; seen: boolean; image: { name: string; model: string } };
+export type CompanionStory = { id: string; at: string; caption: string; seen: boolean; liked?: boolean; image: { name: string; model: string } };
 
 /**
  * Her chat's colour by her tone (maestro companion/tone.py `TONES`): rose by default, deep red
@@ -485,6 +485,12 @@ export async function fetchStories(lane: Lane): Promise<CompanionStory[]> {
 /** He watched one: the ring goes when none are left unseen. Best effort. */
 export async function markStorySeen(lane: Lane, id: string): Promise<void> {
   await post(lane, whoPath('/companion/stories/seen'), { id }).catch(() => undefined);
+}
+
+/** A heart on a story: its photo joins the training set for her next LoRA. */
+export async function likeStory(lane: Lane, id: string, on: boolean): Promise<void> {
+  const res = await post(lane, whoPath('/companion/stories/like'), { id, on });
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
 /** Her diary, newest first. */

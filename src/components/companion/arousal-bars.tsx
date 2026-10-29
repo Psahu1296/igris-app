@@ -65,18 +65,21 @@ export function ArousalBars({ arousal, accent, onHold }: { arousal: CompanionAro
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           onHold?.(!arousal.hold);
         }}
-        hitSlop={8}>
+        style={styles.holdTarget}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel={arousal.hold ? 'Let go' : 'Hold back'}>
         <Row label={arousal.hold ? '🔒' : 'You'} color={HIS} value={his} />
       </Pressable>
       {onHold ? (
-        <Text style={[styles.hint, { color: arousal.hold ? PEAK : Palette.muted }]}>
+        <Text pointerEvents="none" style={[styles.hint, { color: arousal.hold ? PEAK : Palette.muted }]}>
           {arousal.overload ? '🔥 holding her at the peak — keep going' : arousal.hold ? 'holding back — tap to let go' : 'tap your bar to hold back'}
         </Text>
       ) : null}
-      {arousal.climaxes > 0 ? <Text style={[styles.count, { color: accent }]}>✦ {arousal.climaxes}</Text> : null}
+      {arousal.climaxes > 0 ? <Text pointerEvents="none" style={[styles.count, { color: accent }]}>✦ {arousal.climaxes}</Text> : null}
       {/* Held at the edge (maestro arousal edging): keep her there and the next one breaks bigger. */}
-      {arousal.edge_at ? <Text style={[styles.count, { color: accent }]}>⏳ edging — hold her there</Text> : null}
-      <Animated.View style={[styles.flash, { backgroundColor: accent }, flashStyle]} />
+      {arousal.edge_at ? <Text pointerEvents="none" style={[styles.count, { color: accent }]}>⏳ edging — hold her there</Text> : null}
+      <Animated.View pointerEvents="none" style={[styles.flash, { backgroundColor: accent }, flashStyle]} />
     </View>
   );
 }
@@ -109,6 +112,8 @@ const styles = StyleSheet.create({
     borderColor: Palette.hairline,
     overflow: 'hidden',
   },
+  // A thumb-sized target: the bar itself is 6 px tall.
+  holdTarget: { minHeight: 36, justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
   label: { width: 28, fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
   track: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Palette.surfaceGlassHover, overflow: 'hidden' },

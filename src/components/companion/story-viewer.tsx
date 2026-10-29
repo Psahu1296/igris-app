@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { ArrowUp, X } from 'lucide-react-native';
+import { ArrowUp, Heart, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, cancelAnimation, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableScale } from '@/components/pressable-scale';
 import { Meta } from '@/components/typography';
 import { Font, Gutter, Palette, Space, Type } from '@/constants/theme';
-import { markStorySeen, type CompanionStory } from '@/lib/companion';
+import { likeStory, markStorySeen, type CompanionStory } from '@/lib/companion';
 import { drawnSource, type Lane } from '@/lib/maestro';
 
 /** How long one story shows before the next. */
@@ -40,6 +40,8 @@ export function StoryViewer({
   const [loaded, setLoaded] = useState<{ id: string; uri: string; headers: Record<string, string> } | null>(null);
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
+  // Hearts by story id, over what the Mac sent; flipped at once, undone if the Mac refuses.
+  const [hearts, setHearts] = useState<Record<string, boolean>>({});
   const progress = useSharedValue(0);
   const story = stories[index];
   const source = loaded && story && loaded.id === story.id ? { uri: loaded.uri, headers: loaded.headers } : null;
@@ -73,6 +75,13 @@ export function StoryViewer({
 
   const bar = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
   if (!story) return null;
+
+  const liked = hearts[story.id] ?? !!story.liked;
+  const toggleHeart = () => {
+    const on = !liked;
+    setHearts((h) => ({ ...h, [story.id]: on }));
+    likeStory(lane, story.id, on).catch(() => setHearts((h) => ({ ...h, [story.id]: !on })));
+  };
 
   const send = () => {
     const text = draft.trim();
@@ -120,6 +129,14 @@ export function StoryViewer({
               onSubmitEditing={send}
               accessibilityLabel="Reply to her story"
             />
+            <PressableScale
+              onPress={toggleHeart}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={liked ? 'Remove heart' : 'Heart this story'}
+              style={styles.heart}>
+              <Heart size={24} color={liked ? accent : '#fff'} fill={liked ? accent : 'none'} />
+            </PressableScale>
             <PressableScale
               onPress={send}
               disabled={!draft.trim()}
@@ -180,5 +197,6 @@ const styles = StyleSheet.create({
     fontFamily: Font.ui,
     ...Type.ask,
   },
+  heart: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   send: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 });

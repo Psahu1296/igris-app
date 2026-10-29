@@ -649,6 +649,35 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
 
   const busy = live !== null || snapping !== null;
 
+  // Touches while she is still answering are not lost or refused: taps of the same touch add up and go
+  // out the moment she finishes, so she reacts to everything he does in one flowing run, not turn by turn.
+  const busyNow = useRef(busy);
+  useEffect(() => {
+    busyNow.current = busy;
+  }, [busy]);
+  const waitingTouch = useRef<{ touch: CompanionTouch; taps: number; pace: number } | null>(null);
+  const sendTouch = useCallback(
+    (touch: CompanionTouch, taps: number, pace: number) => {
+      lastTouchAt.current = Date.now();
+      if (!busyNow.current) {
+        void send({ touch: { touch, taps, pace } });
+        return;
+      }
+      const waiting = waitingTouch.current;
+      waitingTouch.current =
+        waiting && waiting.touch.id === touch.id
+          ? { touch, taps: waiting.taps + taps, pace: Math.max(waiting.pace, pace) }
+          : { touch, taps, pace };
+    },
+    [send],
+  );
+  useEffect(() => {
+    if (busy || !waitingTouch.current) return;
+    const next = waitingTouch.current;
+    waitingTouch.current = null;
+    void send({ touch: next });
+  }, [busy, send]);
+
   // "Don't stop" (maestro arousal.py): she is at the edge, mid-act, and he has not touched her for
   // PAUSE_MS — the app tells the Mac he stopped, once for this stretch, and she begs.
   const pausedFor = useRef('');
@@ -761,7 +790,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               accent={ROSE}
               // Only mid-act (the button is ⚡ Push): hold his bar and keep her at the peak (maestro arousal).
               onHold={
-                touches[0]?.id === 'push'
+                touches.some((t) => t.id === 'push') || arousal.hold
                   ? (on) => {
                       setArousal((a) => (a ? { ...a, hold: on, overload: on && a.overload } : a));
                       setHold(lane, on)
@@ -775,8 +804,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           <ScrollView
             ref={scroller}
             style={styles.fill}
-            contentContainerStyle={[styles.list, touches.length ? styles.listUnderTouch : null]}
-            onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
+            contentContainerStyle={[styles.list, touches.length || positions.length ? styles.listUnderTouch : null, pleasure.length ? styles.listUnderPleasure : null]}
+            // Not animated while she types: an animation per streamed word made the list judder.
+            onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: !busy })}
             onLayout={() => scroller.current?.scrollToEnd({ animated: false })}
             keyboardDismissMode="none">
             {messages.length === 0 && !busy ? (
@@ -915,24 +945,18 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
           {touches.length && !emoting ? (
             <TouchButton
               touches={touches}
-              disabled={busy}
+              disabled={false}
               accent={accent}
-              onTouch={(touch, taps, pace) => {
-                lastTouchAt.current = Date.now();
-                void send({ touch: { touch, taps, pace } });
-              }}
+              onTouch={sendTouch}
             />
           ) : null}
           {pleasure.length && !emoting ? (
             <TouchButton
               touches={pleasure}
               raised
-              disabled={busy}
+              disabled={false}
               accent={accent}
-              onTouch={(touch, taps, pace) => {
-                lastTouchAt.current = Date.now();
-                void send({ touch: { touch, taps, pace } });
-              }}
+              onTouch={sendTouch}
             />
           ) : null}
           {positions.length && !emoting ? (
@@ -1491,6 +1515,8 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: Gutter - 6, paddingVertical: Space.lg, gap: Space.sm },
   // Room under the last message for the floating touch button.
   listUnderTouch: { paddingBottom: 96 },
+  // The raised second button sits 84 higher (touch-button.tsx `raised`).
+  listUnderPleasure: { paddingBottom: 180 },
   hello: { textAlign: 'center', marginTop: Space.huge, marginHorizontal: Space.xl },
   bubble: { maxWidth: '82%', paddingHorizontal: Space.md + 2, paddingVertical: Space.sm + 1, borderRadius: 18 },
   mine: { alignSelf: 'flex-end', backgroundColor: Palette.surfaceLift, borderBottomRightRadius: 6 },
