@@ -23,6 +23,8 @@ import {
   makeTrainingSet,
   ROSE,
   ROSE_SOFT,
+  editHer,
+  showHerLook,
   takeHerTo,
   type ChoiceGroup,
   type ChoicesCard,
@@ -494,13 +496,15 @@ function Sections({ cards, lane }: { cards: ProfileCard[]; lane: Lane }) {
 function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; lane: Lane }) {
   const [groups, setGroups] = useState(card.groups);
   const [busy, setBusy] = useState(false);
+  // Her look changed on this visit: she can show him (one turn, not one per chip).
+  const [changed, setChanged] = useState(false);
 
   const pick = (group: ChoiceGroup, optionId: string) => {
     if (busy) return;
     void Haptics.selectionAsync();
-    if (card.action === 'go') {
+    if (card.action === 'go' || card.action === 'edit') {
       setBusy(true);
-      takeHerTo(lane, optionId)
+      (card.action === 'go' ? takeHerTo(lane, optionId) : editHer(lane, optionId))
         .then(() => router.back())
         .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT))
         .finally(() => setBusy(false));
@@ -514,6 +518,7 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
           : { ...g, options: g.options.map((o) => (o.id === optionId ? { ...o, on: !o.on } : g.multi ? o : { ...o, on: false })) },
       ),
     );
+    setChanged(true);
     chooseAppearance(lane, group.id, optionId)
       .then((got) => setGroups(got.groups))
       .catch((e: unknown) => {
@@ -549,6 +554,22 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
           </View>
         </View>
       ))}
+      {card.action === 'appearance' && changed ? (
+        <PressableScale
+          onPress={() => {
+            if (busy) return;
+            setBusy(true);
+            showHerLook(lane)
+              .then(() => router.back())
+              .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT))
+              .finally(() => setBusy(false));
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="She shows you her new look"
+          style={styles.showLook}>
+          <Text style={styles.showLookText}>{busy ? 'Opening the chat…' : 'Done · she shows you'}</Text>
+        </PressableScale>
+      ) : null}
     </View>
   );
 }
@@ -1131,6 +1152,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   choiceGroup: { gap: 6 },
+  showLook: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: ROSE },
+  showLookText: { fontFamily: Font.uiMedium, color: Palette.ground, ...Type.small },
   choiceGroupTitle: { fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   choice: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: Palette.hairline },

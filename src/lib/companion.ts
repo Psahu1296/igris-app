@@ -832,7 +832,7 @@ export async function correctPhoto(lane: Lane, name: string, wrong: string[], re
 type CardLook = { icon?: string; section?: string };
 
 export type ChoiceGroup = { id: string; title: string; multi: boolean; options: { id: string; label: string; on: boolean }[] };
-export type ChoicesCard = { kind: 'choices'; title: string; action: 'appearance' | 'go'; caption?: string; groups: ChoiceGroup[] };
+export type ChoicesCard = { kind: 'choices'; title: string; action: 'appearance' | 'go' | 'edit'; caption?: string; groups: ChoiceGroup[] };
 
 export type ProfileCard = CardLook &
   (
@@ -982,11 +982,26 @@ export async function chooseAppearance(lane: Lane, group: string, choice: string
  * the chat picks it up from the Mac when it opens.
  */
 export async function takeHerTo(lane: Lane, id: string): Promise<void> {
+  return startFromPage(lane, '/companion/go', { id });
+}
+
+/** Changes something about her from her page (maestro companion/edits.py); she texts him about it first. */
+export async function editHer(lane: Lane, id: string): Promise<void> {
+  return startFromPage(lane, '/companion/edit', { id });
+}
+
+/** After changing how she looks: she texts him about it and shows him. */
+export async function showHerLook(lane: Lane): Promise<void> {
+  return startFromPage(lane, '/companion/appearance/show', {});
+}
+
+/** A turn started from her page: the Mac writes it as a task, so the stream is not read (the chat syncs it). */
+async function startFromPage(lane: Lane, path: string, body: unknown): Promise<void> {
   const controller = new AbortController();
-  const res = await authedFetch(lane, whoPath('/companion/go'), {
+  const res = await authedFetch(lane, whoPath(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   });
   controller.abort();
