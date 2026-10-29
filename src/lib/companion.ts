@@ -181,17 +181,25 @@ export type CompanionArousal = {
   /** He holds his bar (maestro POST /companion/hold); `overload`: held and she has squirted — she stays at the peak. */
   hold?: boolean;
   overload?: boolean;
+  /** How close the two bars are, 0 to 1 (maestro arousal.sync_of); `synced`: the ring is shut. Missing on an older maestro. */
+  sync?: number;
+  synced?: boolean;
+  /** When they last came together: the together moment plays once for it. `perfect`: it was in sync. */
+  together_at?: string | null;
+  perfect?: boolean;
 };
 
 /** A position on the position button's wheel (maestro poses.POSITIONS); `said` is his move as shown. */
 export type CompanionPosition = { id: string; title: string; about: string; said: string };
 
-export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] | [string, string, string, string] };
+export type CompanionTouch = { id: string; label: string; icon: string; lines: [string, string, string] | [string, string, string, string] | string[] };
 
 /** His action for a burst of taps, the same thresholds as touch.line on the Mac. */
 export const touchLine = (touch: CompanionTouch, taps: number) =>
-  // maestro touch.grade: 1, 2-3, 4+ — or with a fourth line (push during sex): 1, 2-3, 4-5, 6+.
-  taps <= 1 ? touch.lines[0] : taps <= 3 ? touch.lines[1] : taps <= 5 ? touch.lines[2] : (touch.lines[3] ?? touch.lines[2]);
+  // maestro touch.grade: 1, 2-3, 4+ — with a fourth line (deep push): 1, 2-3, 4-5, 6+ — with six (push): 1, 2-3, 4, 5-7, 8-9, 10+.
+  touch.lines.length >= 6
+    ? (touch.lines[taps <= 1 ? 0 : taps <= 3 ? 1 : taps === 4 ? 2 : taps <= 7 ? 3 : taps <= 9 ? 4 : 5] ?? touch.lines[0])
+    : taps <= 1 ? touch.lines[0] : taps <= 3 ? touch.lines[1] : taps <= 5 ? touch.lines[2] : (touch.lines[3] ?? touch.lines[2]);
 
 /** One of the companions on the Mac (maestro companion/profiles.py), for the picker. */
 export type CompanionListing = { id: string; name: string; age: number; face: string | null; busy: boolean };
