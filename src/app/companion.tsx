@@ -27,6 +27,7 @@ import { ArousalBars } from '@/components/companion/arousal-bars';
 import { EnergyChip } from '@/components/companion/energy-chip';
 import { CountdownChip } from '@/components/companion/countdown-chip';
 import { PositionButton } from '@/components/companion/position-button';
+import { GameStopButton } from '@/components/companion/game-stop-button';
 import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
@@ -83,6 +84,7 @@ import {
   type CompanionOutfit,
   type CompanionPhoto,
   type PhotoView,
+  type CompanionGame,
   type CompanionScene,
 } from '@/lib/companion';
 import { canSpeak, hush, releaseCompanionVoice, say, voiceMode } from '@/lib/companion-voice';
@@ -128,6 +130,8 @@ type Turn = {
   reply?: { story: CompanionStory; text: string };
   /** A button under her message: its words, sent as his message. */
   say?: string;
+  /** The stop button while a game runs: she ends it in one message. */
+  stopGame?: boolean;
 };
 /** How often an idle screen asks the Mac what is new: she may answer late, or write first. */
 const IDLE_MS = 20_000;
@@ -217,6 +221,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   const accent = toneColor(tone);
   const [liked, setLiked] = useState<string[]>(seen?.liked ?? []);
   const [scenes, setScenes] = useState<CompanionScene[]>(seen?.scenes ?? []);
+  // The game or roleplay running (maestro scenes.py): the floating button becomes its stop button.
+  const [game, setGame] = useState<CompanionGame | null>(seen?.game ?? null);
   const [outfits, setOutfits] = useState<CompanionOutfit[]>(seen?.outfits ?? []);
   // The floating button's touches for this moment (maestro companion/touch.py); [] hides it.
   const [touches, setTouches] = useState<CompanionTouch[]>(seen?.touches ?? []);
@@ -296,6 +302,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         setTone(c.state?.tone);
         setLiked(c.liked ?? []);
         setScenes(c.scenes ?? []);
+        setGame(c.game ?? null);
         setOutfits(c.outfits ?? []);
         setTouches(c.touches ?? []);
         setPleasure(c.pleasure ?? []);
@@ -393,7 +400,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         ? turn.reply.text
         : turn.say
           ? turn.say
-          : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.toy || turn.scene !== undefined || turn.outfit !== undefined
+          : turn.snap || turn.view || turn.touch || turn.gift || turn.position || turn.toy || turn.stopGame || turn.scene !== undefined || turn.outfit !== undefined
           ? undefined
           : composeMessage(parts, armed, draft);
     // The same double-submit guard as the composer: one Enter can fire submit twice.
@@ -450,6 +457,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         message: text,
         image: turn.photo?.base64,
         scene: turn.scene,
+        stopGame: turn.stopGame,
         outfit: turn.outfit,
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps, pace: turn.touch.pace } : undefined,
         gift: turn.gift?.id,
@@ -979,7 +987,17 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
               </View>
             ) : null}
           </ScrollView>
-          {touches.length && !emoting ? (
+          {game && !emoting ? (
+            <GameStopButton
+              game={game}
+              accent={accent}
+              disabled={live !== null}
+              onStop={() => {
+                setGame(null);
+                void send({ stopGame: true });
+              }}
+            />
+          ) : touches.length && !emoting ? (
             <TouchButton
               touches={touches}
               disabled={false}
@@ -1016,7 +1034,11 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             busy={busy}
             accent={accent}
             onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
-            onScene={(scene) => void send({ scene: scene.id })}
+            onScene={(scene) => {
+              // A game or roleplay runs from her first message: the stop button shows at once, not at the next sync.
+              if (scene.kind !== 'scene') setGame({ id: scene.id, title: scene.title, kind: scene.kind, emoji: scene.emoji });
+              void send({ scene: scene.id });
+            }}
             onOutfit={(outfit) => void send({ outfit: outfit.id })}
             gifts={gifts}
             onGift={(gift) => void send({ gift })}

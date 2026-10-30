@@ -470,6 +470,10 @@ released with no underruns. Download to speech took under 20s on 5G.
   then outrank her guesses) or forgotten (by id); day lines, firsts and plans with a time are shown only. "Tell
   her to remember something" posts `/companion/memory` with an optional day (chips, the phone's own date). A
   maestro without the route shows "too old". JS only: an OTA.
+- **A game's stop button** (`components/companion/game-stop-button.tsx`, 2026-10-31): while maestro's `GET /companion`
+  carries `game` (or right after a game/roleplay chip is tapped), the touch button gives way to "⏹ Stop game", which
+  streams POST `/companion/game/stop` (`streamCompanion({ stopGame })`) and she closes it. Each step's buttons come
+  from maestro's rounds.py as her message's `choices`. JS only: an OTA.
 - **Touch her: the floating button** (`components/companion/touch-button.tsx`, 2026-10-27). maestro
   `GET /companion` lists `touches` for the moment (companion/touch.py decides: apart → sent kiss/hug/
   poke, together → tickle…, intimate → finger…); the first is the button's face, long-press fans out

@@ -95,6 +95,8 @@ export const toneColor = (tone?: string) => TONE_COLORS[tone ?? 'neutral'] ?? TO
 /** A scene or a game he can start with one tap (maestro companion/scenes.py). */
 /** `emoji` and `about` (one line of what happens) are for his tray; missing on a maestro before 2026-10-28. */
 export type CompanionScene = { id: string; title: string; kind: 'scene' | 'game' | 'roleplay'; emoji?: string; about?: string };
+/** A game or roleplay being played: while it runs the floating button stops it (POST /companion/game/stop). */
+export type CompanionGame = { id: string; title: string; kind: 'game' | 'roleplay'; emoji?: string };
 
 /** Tonight's dial (maestro companion/dial.py): how he wants a scene to go, and who leads. */
 export type CompanionDial = { pace: number; lead: 'her' | 'him' | 'switch'; talk?: 'sweet' | 'bold' | 'filthy' };
@@ -245,6 +247,8 @@ export type Companion = {
   companions?: CompanionListing[];
   /** Her photos still on their way (maestro companion/darkroom.py); null when none. Missing on an older maestro. */
   photos?: CompanionPhotosComing | null;
+  /** The game or roleplay running now (maestro scenes.py); null when none. Missing on a maestro from before 2026-10-31. */
+  game?: CompanionGame | null;
   /** The touches that fit this moment, first = the button's face. Missing on a maestro from before 2026-10-27. */
   touches?: CompanionTouch[];
   /** Her toy's remote (maestro toy.py): while apart and warm; null hides it. */
@@ -632,6 +636,8 @@ export async function streamCompanion(opts: {
   story?: string;
   /** A scene card's id; `message` and `image` are then ignored. */
   scene?: string;
+  /** End the game or roleplay running now: she closes it in one message. Ignores the rest, like `scene`. */
+  stopGame?: boolean;
   /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
   outfit?: string;
   /** He touches her (POST /companion/touch): a touch's id and how many taps in the burst. */
@@ -652,10 +658,11 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, position, toy, call = false, story, live = false, view, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, position, toy, call = false, story, live = false, view, stopGame = false, onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
-  const card =
-    scene !== undefined
+  const card = stopGame
+    ? { path: 'game/stop', id: '' }
+    : scene !== undefined
       ? { path: 'scene', id: scene }
       : outfit !== undefined
         ? { path: 'outfit', id: outfit }
