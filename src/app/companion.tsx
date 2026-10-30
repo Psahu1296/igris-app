@@ -1041,7 +1041,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             accent={accent}
             onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
             onScene={(scene) => {
-              if (scene.kind === 'roleplay') return setRoleplay(scene);   // how it starts, first
+              if (scene.kind === 'roleplay' || scene.kind === 'dark') return setRoleplay(scene);   // how it starts, first
               // A game runs from her first message: the stop button shows at once, not at the next sync.
               if (scene.kind === 'game') setGame({ id: scene.id, title: scene.title, kind: scene.kind, emoji: scene.emoji });
               void send({ scene: scene.id });
@@ -1066,7 +1066,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onStart={(context) => {
               const picked = roleplay;
               setRoleplay(null);
-              setGame({ id: picked.id, title: picked.title, kind: 'roleplay', emoji: picked.emoji });
+              setGame({ id: picked.id, title: picked.title, kind: picked.kind === 'dark' ? 'dark' : 'roleplay', emoji: picked.emoji });
               void send({ scene: picked.id, context });
             }}
           />

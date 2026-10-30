@@ -26,7 +26,7 @@ export function GameStopButton({ game, accent, disabled, onStop }: { game: Compa
         style={[styles.button, { borderColor: accent }, disabled && styles.dim]}>
         <Square size={14} color={accent} fill={accent} />
         <Text numberOfLines={1} style={styles.text}>
-          {game.emoji ? `${game.emoji} ` : ''}Stop {game.kind === 'roleplay' ? 'roleplay' : 'game'}
+          {game.emoji ? `${game.emoji} ` : ''}Stop {game.kind === 'game' ? 'game' : 'roleplay'}
         </Text>
       </PressableScale>
     </Animated.View>

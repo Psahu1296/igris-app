@@ -50,6 +50,7 @@ const KINDS: { id: Kind; title: string }[] = [
   { id: 'scene', title: 'Moments' },
   { id: 'game', title: 'Games' },
   { id: 'roleplay', title: 'Roleplay' },
+  { id: 'dark', title: '🖤 Dark' },
 ];
 
 /**
