@@ -885,7 +885,7 @@ export type ProfileCard = CardLook &
     | { kind: 'ring'; title: string; value: number; max: number; caption?: string }
     | { kind: 'text'; title: string; value: string }
     /** The last weeks, oldest first: 0 silent, 1 talked, 2 flirty, 3 an intimate night. */
-    | { kind: 'calendar'; title: string; value: { date: string; level: number }[] }
+    | { kind: 'calendar'; title: string; caption?: string; value: { date: string; level: number }[] }
     /** Every badge, earned (`got`) or still to get. */
     | { kind: 'badges'; title: string; value: { id: string; title: string; icon: string; got: boolean }[] }
     /** Groups of options he taps (maestro companion/appearance.py, goto.py): how she looks, where she goes. */

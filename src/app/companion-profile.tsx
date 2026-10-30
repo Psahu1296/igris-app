@@ -39,7 +39,9 @@ import { useSession } from '@/state/session';
 type Source = { uri: string; headers: Record<string, string> };
 
 /** The calendar's warmth per level: silent, talked, flirty, an intimate night. */
-const HEAT = ['rgba(255,255,255,0.05)', 'rgba(251,113,133,0.22)', 'rgba(251,113,133,0.5)', '#FB7185'];
+const HEAT = ['rgba(255,255,255,0.07)', 'rgba(251,113,133,0.22)', 'rgba(251,113,133,0.5)', '#FB7185'];
+const HEAT_WORDS = ['Quiet', 'Talked', 'Flirty', 'Intimate'];
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /** Her second colour: the warm end of every gradient on her page. */
 const PEACH = '#FDBA74';
@@ -756,9 +758,26 @@ function Card({ card, lane }: { card: ProfileCard; lane: Lane }) {
           </View>
           <Text style={styles.cardTitle}>{card.title}</Text>
         </View>
+        {card.caption ? <Meta style={styles.heatCaption}>{card.caption}</Meta> : null}
+        {/* The Mac starts the grid on a Monday (maestro page.calendar), so the columns are weekdays. */}
         <View style={styles.heatGrid}>
+          {WEEKDAYS.map((d, i) => (
+            <Text key={`wd-${i}`} style={styles.heatWeekday}>
+              {d}
+            </Text>
+          ))}
           {card.value.map((day) => (
-            <View key={day.date} style={[styles.heatDay, { backgroundColor: HEAT[Math.max(0, Math.min(3, day.level))] }]} />
+            <View key={day.date} style={[styles.heatDay, { backgroundColor: HEAT[Math.max(0, Math.min(3, day.level))] }]}>
+              <Text style={[styles.heatNum, day.level >= 2 && styles.heatNumOn]}>{Number(day.date.slice(8, 10))}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.heatLegend}>
+          {HEAT_WORDS.map((w, i) => (
+            <View key={w} style={styles.heatKey}>
+              <View style={[styles.heatSwatch, { backgroundColor: HEAT[i] }]} />
+              <Meta>{w}</Meta>
+            </View>
           ))}
         </View>
       </View>
@@ -1317,7 +1336,14 @@ const styles = StyleSheet.create({
 
   /* Quote Card */
   heatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: Space.sm },
-  heatDay: { width: '12.4%', aspectRatio: 1, borderRadius: 5 },
+  heatDay: { width: '12.4%', aspectRatio: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  heatWeekday: { width: '12.4%', textAlign: 'center', fontFamily: Font.ui, fontSize: 10, color: Palette.faint },
+  heatNum: { fontFamily: Font.ui, fontSize: 10, color: Palette.faint },
+  heatNumOn: { color: Palette.text },
+  heatCaption: { marginTop: 2 },
+  heatLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.md, marginTop: Space.sm },
+  heatKey: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heatSwatch: { width: 10, height: 10, borderRadius: 3 },
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, marginTop: Space.sm },
   badgeCell: { width: '30.5%', alignItems: 'center', gap: 6, paddingVertical: Space.sm },
   badgeLocked: { opacity: 0.5 },
