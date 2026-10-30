@@ -130,8 +130,6 @@ export type CompanionGift = { id: string; label: string; icon: string; line: str
 
 export type DiaryEntry = { date: string; text: string };
 
-/** One thing she has written down about the two of them (maestro companion/memory.py). */
-export type CompanionMemory = { at: string; kind: 'fact' | 'episode' | 'reflection'; text: string; weight: number };
 
 /**
  * A turn still running on the Mac (api/companion.py `_pending`). The Mac finishes a turn
@@ -524,16 +522,42 @@ export async function fetchDiary(lane: Lane): Promise<DiaryEntry[]> {
   return ((await res.json()) as { entries: DiaryEntry[] }).entries;
 }
 
-/** What she remembers, newest first. */
-export async function fetchMemory(lane: Lane): Promise<CompanionMemory[]> {
-  const res = await authedFetch(lane, whoPath('/companion/memory'));
-  if (!res.ok) throw new Error(res.status === 404 ? "This Mac's maestro is too old for her memory." : `The Mac refused (${res.status}).`);
-  return ((await res.json()) as { items: CompanionMemory[] }).items;
+/**
+ * One row of her memory page. `id` set = one of her memories, which he can correct or make her
+ * forget; "" = shown only (a day's line, a first, a plan with a time). `mine`: his own words.
+ */
+export type MemoryRow = { id: string; text: string; note: string; at: string; mine: boolean };
+/** One layer of her memory (maestro companion/memorypage.py); title and note come from the Mac. */
+export type MemorySection = { key: string; title: string; about: string; rows: MemoryRow[] };
+
+/** Her memory by layer. null = a maestro from before the layers (use fetchMemory). */
+export async function fetchMemoryLayers(lane: Lane): Promise<MemorySection[] | null> {
+  const res = await authedFetch(lane, whoPath('/companion/memory/layers'));
+  if (res.status === 404 || res.status === 405) return null;
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return ((await res.json()) as { sections: MemorySection[] }).sections;
 }
 
-export async function forgetMemory(lane: Lane, item: CompanionMemory): Promise<void> {
-  const res = await post(lane, whoPath('/companion/memory/forget'), { at: item.at, text: item.text });
+export async function forgetMemoryId(lane: Lane, id: string): Promise<void> {
+  const res = await post(lane, whoPath('/companion/memory/forget'), { id });
   if (!res.ok && res.status !== 404) throw new Error(`The Mac refused (${res.status}).`);
+}
+
+/** His wording replaces hers, and ranks above anything she guesses later. */
+export async function correctMemory(lane: Lane, id: string, text: string): Promise<MemoryRow> {
+  const res = await post(lane, whoPath('/companion/memory/correct'), { id, text });
+  if (res.status === 422) throw new Error('She will not remember that.');
+  if (!res.ok) throw new Error(res.status === 404 ? 'She no longer remembers that one.' : `The Mac refused (${res.status}).`);
+  const item = (await res.json()) as { id?: string; text: string; at: string };
+  return { id: item.id ?? id, text: item.text, note: 'your words', at: item.at, mine: true };
+}
+
+/** Something she must remember; with `until` (YYYY-MM-DD) a plan she asks about on the day and after. */
+export async function rememberThis(lane: Lane, text: string, until: string): Promise<void> {
+  const res = await post(lane, whoPath('/companion/memory'), { text, until });
+  if (res.status === 409) throw new Error('She already knows that.');
+  if (res.status === 422) throw new Error('She will not remember that.');
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
 /** Her name while `active` on the Mac, or null: not the owner, Render, or an old maestro. */

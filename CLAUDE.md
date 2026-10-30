@@ -464,6 +464,12 @@ released with no underruns. Download to speech took under 20s on 5G.
   public and only knows the kinds. Diary and memory reuse the chat's sheets; the photo grid
   pages `GET /companion/photos`, long-press hearts or deletes (the chat's own routes), and
   "Training set" asks the Mac to copy hearted photos for a later retrain. The "Change her" and "take her somewhere" cards are chips, one per group, saying what it is set to; a tap opens that group's options in the shared `BottomSheet` (2026-10-30, the page was crowded with every option in place). JS only: an OTA.
+- **Her memory page** (`components/companion/memory-sheet.tsx`, 2026-10-31, maestro memory v3 slice 9): sections
+  from `GET /companion/memory/layers` (who he is, held with care, plans, days and weeks, firsts, the rest), titles
+  and notes written by the Mac. A row with an `id` can be corrected (POST `/companion/memory/correct`, his words
+  then outrank her guesses) or forgotten (by id); day lines, firsts and plans with a time are shown only. "Tell
+  her to remember something" posts `/companion/memory` with an optional day (chips, the phone's own date). A
+  maestro without the route shows "too old". JS only: an OTA.
 - **Touch her: the floating button** (`components/companion/touch-button.tsx`, 2026-10-27). maestro
   `GET /companion` lists `touches` for the moment (companion/touch.py decides: apart → sent kiss/hug/
   poke, together → tickle…, intimate → finger…); the first is the button's face, long-press fans out
