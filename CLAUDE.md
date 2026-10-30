@@ -474,6 +474,9 @@ released with no underruns. Download to speech took under 20s on 5G.
   carries `game` (or right after a game/roleplay chip is tapped), the touch button gives way to "⏹ Stop game", which
   streams POST `/companion/game/stop` (`streamCompanion({ stopGame })`) and she closes it. Each step's buttons come
   from maestro's rounds.py as her message's `choices`. JS only: an OTA.
+- **How a roleplay starts** (`components/companion/roleplay-sheet.tsx`, 2026-10-31): tapping a roleplay opens a sheet
+  with maestro's drawn opening (GET `/companion/scene/{id}/opening`: setup + a random twist), editable; "Another"
+  draws again, "Start" sends POST `/companion/scene` {id, context} and every turn of the role hears that text.
 - **Touch her: the floating button** (`components/companion/touch-button.tsx`, 2026-10-27). maestro
   `GET /companion` lists `touches` for the moment (companion/touch.py decides: apart → sent kiss/hug/
   poke, together → tickle…, intimate → finger…); the first is the button's face, long-press fans out

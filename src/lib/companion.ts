@@ -564,6 +564,14 @@ export async function rememberThis(lane: Lane, text: string, until: string): Pro
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
 }
 
+/** How a roleplay would start: its setup with a random twist (maestro scenes.opening). null on an older maestro. */
+export async function fetchOpening(lane: Lane, id: string): Promise<string | null> {
+  const res = await authedFetch(lane, whoPath(`/companion/scene/${encodeURIComponent(id)}/opening`));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
+  return ((await res.json()) as { opening: string }).opening;
+}
+
 /** Her name while `active` on the Mac, or null: not the owner, Render, or an old maestro. */
 export function useCompanionName(lane: Lane, active: boolean): string | null {
   const [name, setName] = useState<string | null>(null);
@@ -636,6 +644,8 @@ export async function streamCompanion(opts: {
   story?: string;
   /** A scene card's id; `message` and `image` are then ignored. */
   scene?: string;
+  /** A roleplay's context, as he wrote it or kept it from the opening sheet ("" = the card's own). */
+  context?: string;
   /** End the game or roleplay running now: she closes it in one message. Ignores the rest, like `scene`. */
   stopGame?: boolean;
   /** An outfit's id: she puts it on and shows him. Ignores the rest, like `scene`. */
@@ -658,12 +668,12 @@ export async function streamCompanion(opts: {
   onEvent: (event: CompanionEvent) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { lane, message, image, scene, outfit, touch, gift, position, toy, call = false, story, live = false, view, stopGame = false, onEvent, signal } = opts;
+  const { lane, message, image, scene, outfit, touch, gift, position, toy, call = false, story, live = false, view, stopGame = false, context = '', onEvent, signal } = opts;
   // A card (a scene, an outfit, a touch) is sent by its id; the camera button sends nothing at all.
   const card = stopGame
     ? { path: 'game/stop', id: '' }
     : scene !== undefined
-      ? { path: 'scene', id: scene }
+      ? { path: 'scene', id: scene, context }
       : outfit !== undefined
         ? { path: 'outfit', id: outfit }
         : touch !== undefined
@@ -680,7 +690,7 @@ export async function streamCompanion(opts: {
   const body = view
     ? JSON.stringify(view)
     : card
-      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : card.path === 'toy' ? toy : { id: card.id })
+      ? JSON.stringify(card.path === 'touch' ? { id: card.id, taps: card.taps, pace: card.pace } : card.path === 'toy' ? toy : card.path === 'scene' ? { id: card.id, context: card.context } : { id: card.id })
       : snap
         ? undefined
         : JSON.stringify({ message: message ?? '', image, live, story, call });

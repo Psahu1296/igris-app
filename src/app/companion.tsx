@@ -28,6 +28,7 @@ import { EnergyChip } from '@/components/companion/energy-chip';
 import { CountdownChip } from '@/components/companion/countdown-chip';
 import { PositionButton } from '@/components/companion/position-button';
 import { GameStopButton } from '@/components/companion/game-stop-button';
+import { RoleplaySheet } from '@/components/companion/roleplay-sheet';
 import { TouchButton } from '@/components/companion/touch-button';
 import { PressableScale } from '@/components/pressable-scale';
 import { TypingIndicator } from '@/components/typing-indicator';
@@ -115,6 +116,8 @@ import { useSession } from '@/state/session';
 type Turn = {
   snap?: boolean;
   scene?: string;
+  /** A roleplay's context from its opening sheet. */
+  context?: string;
   outfit?: string;
   photo?: Photo;
   view?: PhotoView;
@@ -254,6 +257,8 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
   // Every companion on the Mac, her included: the switch sheet lists them all.
   const [everyone, setEveryone] = useState<CompanionListing[]>(seen?.companions ?? []);
   const [sheet, setSheet] = useState<'memory' | 'diary' | 'prefs' | 'toy' | 'call' | 'switch' | 'menu' | 'quality' | null>(null);
+  // A roleplay picked from the tray waits here until he has seen (or written) how it starts.
+  const [roleplay, setRoleplay] = useState<CompanionScene | null>(null);
   // The director (`like`: starting from one photo of hers) or the fix sheet for one photo.
   const [directed, setDirected] = useState<{ like: CompanionPhoto | null } | null>(null);
   const [fixing, setFixing] = useState<CompanionPhoto | null>(null);
@@ -457,6 +462,7 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
         message: text,
         image: turn.photo?.base64,
         scene: turn.scene,
+        context: turn.context,
         stopGame: turn.stopGame,
         outfit: turn.outfit,
         touch: turn.touch ? { id: turn.touch.touch.id, taps: turn.touch.taps, pace: turn.touch.pace } : undefined,
@@ -1035,8 +1041,9 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             accent={accent}
             onEmote={(emote) => setDraft((d) => withEmote(d, emote))}
             onScene={(scene) => {
-              // A game or roleplay runs from her first message: the stop button shows at once, not at the next sync.
-              if (scene.kind !== 'scene') setGame({ id: scene.id, title: scene.title, kind: scene.kind, emoji: scene.emoji });
+              if (scene.kind === 'roleplay') return setRoleplay(scene);   // how it starts, first
+              // A game runs from her first message: the stop button shows at once, not at the next sync.
+              if (scene.kind === 'game') setGame({ id: scene.id, title: scene.title, kind: scene.kind, emoji: scene.emoji });
               void send({ scene: scene.id });
             }}
             onOutfit={(outfit) => void send({ outfit: outfit.id })}
@@ -1048,6 +1055,20 @@ function CompanionChat({ onSwitch }: { onSwitch: (who: string) => void }) {
             onDiary={() => setSheet('diary')}
             onPrefs={() => setSheet('prefs')}
             onToy={toy ? () => setSheet('toy') : undefined}
+          />
+        ) : null}
+        {roleplay ? (
+          <RoleplaySheet
+            lane={lane}
+            scene={roleplay}
+            accent={ROSE}
+            onClose={() => setRoleplay(null)}
+            onStart={(context) => {
+              const picked = roleplay;
+              setRoleplay(null);
+              setGame({ id: picked.id, title: picked.title, kind: 'roleplay', emoji: picked.emoji });
+              void send({ scene: picked.id, context });
+            }}
           />
         ) : null}
         {sheet === 'memory' && name ? <MemorySheet lane={lane} name={name} accent={ROSE} onClose={() => setSheet(null)} /> : null}
