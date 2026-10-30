@@ -463,7 +463,7 @@ released with no underruns. Download to speech took under 20s on 5G.
   `GET /companion/profile` as cards of four kinds (meter, stat, ring, text): this repo is
   public and only knows the kinds. Diary and memory reuse the chat's sheets; the photo grid
   pages `GET /companion/photos`, long-press hearts or deletes (the chat's own routes), and
-  "Training set" asks the Mac to copy hearted photos for a later retrain. JS only: an OTA.
+  "Training set" asks the Mac to copy hearted photos for a later retrain. The "Change her" and "take her somewhere" cards are chips, one per group, saying what it is set to; a tap opens that group's options in the shared `BottomSheet` (2026-10-30, the page was crowded with every option in place). JS only: an OTA.
 - **Touch her: the floating button** (`components/companion/touch-button.tsx`, 2026-10-27). maestro
   `GET /companion` lists `touches` for the moment (companion/touch.py decides: apart → sent kiss/hug/
   poke, together → tickle…, intimate → finger…); the first is the button's face, long-press fans out

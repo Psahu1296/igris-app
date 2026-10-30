@@ -1,12 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { BookHeart, Brain, CalendarHeart, ChevronLeft, ChevronRight, CloudRain, Droplet, Flame, Flower2, Heart, Images, Lock, type LucideIcon, MapPin, Moon, Quote, Shirt, Smile, Sparkles, Sprout, Star, Trash2, Trophy } from 'lucide-react-native';
+import { BookHeart, Brain, CalendarHeart, ChevronDown, ChevronLeft, ChevronRight, CloudRain, Droplet, Flame, Flower2, Heart, Images, Lock, type LucideIcon, MapPin, Moon, Quote, Shirt, Smile, Sparkles, Sprout, Star, Trash2, Trophy } from 'lucide-react-native';
 import { createElement, useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, ToastAndroid, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
+import { BottomSheet } from '@/components/companion/bottom-sheet';
 import { DiarySheet } from '@/components/companion/diary-sheet';
 import { MemorySheet } from '@/components/companion/memory-sheet';
 import { PhotoViewer } from '@/components/photo-viewer';
@@ -488,16 +489,26 @@ function Sections({ cards, lane }: { cards: ProfileCard[]; lane: Lane }) {
   );
 }
 
+/** What a group's chip says it is set to: the picked label, "N picked" for several, nothing yet. */
+function summary(group: ChoiceGroup): string {
+  const on = group.options.filter((o) => o.on);
+  return on.length === 0 ? '' : on.length === 1 ? on[0].label : `${on.length} picked`;
+}
+
 /**
  * Groups of options he taps (maestro companion/appearance.py and goto.py): how she looks (each tap is saved
  * on the Mac, and she and her photos change), or where to take her (one tap puts you there, she says she will
- * come, and the chat opens on her answer). The words are the Mac's.
+ * come, and the chat opens on her answer). The words are the Mac's. On the page a group is one chip that says
+ * what it is set to; its options open in a bottom sheet (2026-10-30: all of them in place made the page crowded).
  */
 function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; lane: Lane }) {
   const [groups, setGroups] = useState(card.groups);
   const [busy, setBusy] = useState(false);
   // Her look changed on this visit: she can show him (one turn, not one per chip).
   const [changed, setChanged] = useState(false);
+  // The group whose options are open in the sheet.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const opened = groups.find((g) => g.id === openId) ?? null;
 
   const pick = (group: ChoiceGroup, optionId: string) => {
     if (busy) return;
@@ -505,7 +516,10 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
     if (card.action === 'go' || card.action === 'edit') {
       setBusy(true);
       (card.action === 'go' ? takeHerTo(lane, optionId) : editHer(lane, optionId))
-        .then(() => router.back())
+        .then(() => {
+          setOpenId(null);
+          router.back();
+        })
         .catch((e: unknown) => ToastAndroid.show(e instanceof Error ? e.message : String(e), ToastAndroid.SHORT))
         .finally(() => setBusy(false));
       return;
@@ -519,6 +533,8 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
       ),
     );
     setChanged(true);
+    // One answer per group: the sheet has done its job. A multi-select stays open for the next tap.
+    if (!group.multi) setOpenId(null);
     chooseAppearance(lane, group.id, optionId)
       .then((got) => setGroups(got.groups))
       .catch((e: unknown) => {
@@ -536,24 +552,30 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
         <Text style={styles.cardTitle}>{card.title}</Text>
       </View>
       {card.caption ? <Text style={styles.cardCaption}>{card.caption}</Text> : null}
-      {groups.map((group) => (
-        <View key={group.id} style={styles.choiceGroup}>
-          <Text style={styles.choiceGroupTitle}>{group.title}</Text>
-          <View style={styles.choiceRow}>
-            {group.options.map((o) => (
-              <Pressable
-                key={o.id}
-                onPress={() => pick(group, o.id)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: o.on }}
-                accessibilityLabel={`${group.title}: ${o.label}`}
-                style={[styles.choice, o.on && styles.choiceOn]}>
-                <Text style={[styles.choiceText, o.on && styles.choiceTextOn]}>{o.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ))}
+      <View style={styles.choiceRow}>
+        {groups.map((group) => {
+          const value = summary(group);
+          return (
+            <Pressable
+              key={group.id}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setOpenId(group.id);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={value ? `${group.title}: ${value}. Change` : `${group.title}. Choose`}
+              style={[styles.groupChip, value ? styles.choiceOn : null]}>
+              <Text style={styles.groupChipTitle}>{group.title}</Text>
+              {value ? (
+                <Text style={styles.groupChipValue} numberOfLines={1}>
+                  {value}
+                </Text>
+              ) : null}
+              <ChevronDown size={12} color={value ? ROSE : Palette.faint} />
+            </Pressable>
+          );
+        })}
+      </View>
       {card.action === 'appearance' && changed ? (
         <PressableScale
           onPress={() => {
@@ -569,6 +591,23 @@ function ChoicesPanel({ card, lane }: { card: ChoicesCard & { icon?: string }; l
           style={styles.showLook}>
           <Text style={styles.showLookText}>{busy ? 'Opening the chat…' : 'Done · she shows you'}</Text>
         </PressableScale>
+      ) : null}
+      {opened ? (
+        <BottomSheet title={opened.title} onClose={() => setOpenId(null)}>
+          <ScrollView contentContainerStyle={styles.sheetOptions} showsVerticalScrollIndicator={false}>
+            {opened.options.map((o) => (
+              <Pressable
+                key={o.id}
+                onPress={() => pick(opened, o.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: o.on, disabled: busy }}
+                accessibilityLabel={`${opened.title}: ${o.label}`}
+                style={[styles.choice, styles.sheetChoice, o.on && styles.choiceOn, busy && styles.choiceBusy]}>
+                <Text style={[styles.choiceText, styles.sheetChoiceText, o.on && styles.choiceTextOn]}>{o.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </BottomSheet>
       ) : null}
     </View>
   );
@@ -1151,15 +1190,32 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     flexShrink: 1,
   },
-  choiceGroup: { gap: 6 },
   showLook: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: ROSE },
   showLookText: { fontFamily: Font.uiMedium, color: Palette.ground, ...Type.small },
-  choiceGroupTitle: { fontFamily: Font.uiMedium, color: Palette.muted, ...Type.micro },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   choice: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: Palette.hairline },
   choiceOn: { borderColor: ROSE, backgroundColor: `${ROSE}26` },
   choiceText: { fontFamily: Font.ui, color: Palette.text, ...Type.micro },
   choiceTextOn: { color: ROSE, fontFamily: Font.uiMedium },
+  choiceBusy: { opacity: 0.5 },
+  /* A group on the page: its name and what it is set to; the options are in the sheet. */
+  groupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+    backgroundColor: Palette.surfaceGlass,
+    maxWidth: '100%',
+  },
+  groupChipTitle: { fontFamily: Font.uiMedium, color: Palette.text, ...Type.small },
+  groupChipValue: { fontFamily: Font.ui, color: ROSE, ...Type.small, flexShrink: 1, maxWidth: 120 },
+  sheetOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: Gutter, paddingBottom: Space.lg },
+  sheetChoice: { paddingHorizontal: 16, paddingVertical: 10 },
+  sheetChoiceText: { ...Type.small },
   cardCaption: {
     fontFamily: Font.ui,
     color: Palette.faint,
