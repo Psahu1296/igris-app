@@ -28,9 +28,9 @@ const COUNTS = [1, 2, 3, 4];
 
 /** The sheet's parts, by field id. A field the Mac adds later lands in "More". */
 const GROUPS: { title: string; ids: string[]; folded?: boolean }[] = [
-  { title: 'Shot', ids: ['together', 'level', 'pose', 'shot'] },
-  { title: 'Her', ids: ['wearing', 'colour', 'doing', 'expression'] },
-  { title: 'Scene', ids: ['where', 'light'] },
+  { title: 'Shot', ids: ['together', 'level', 'pose', 'shot', 'framing'] },
+  { title: 'Her', ids: ['wearing', 'colour', 'visible', 'doing', 'hands', 'expression', 'hair', 'makeup'] },
+  { title: 'Scene', ids: ['where', 'light', 'style'] },
   { title: 'More', ids: ['view', 'him', 'extra'], folded: true },
 ];
 const GROUPED = new Set(GROUPS.flatMap((g) => g.ids));
