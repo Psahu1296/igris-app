@@ -796,6 +796,8 @@ export type DirectRequest = {
   /** Keep these choices for the next directed photos. */
   pin?: boolean;
   count?: number;
+  /** His own edit of the prompt: drawn as written, past the Mac's same check (older Macs ignore it). */
+  prompt?: string;
 };
 
 /** The prompt his choices make, and what the Mac changed of them (a camera that cannot fit). */

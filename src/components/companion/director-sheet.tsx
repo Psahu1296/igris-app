@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { ChevronDown, ChevronUp, Pin, PinOff, Sparkles } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Pencil, Pin, PinOff, Sparkles } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -26,13 +26,31 @@ import type { Lane } from '@/lib/maestro';
 const ACT_LEVELS = ['explicit', 'peak'];
 const COUNTS = [1, 2, 3, 4];
 
+/** The sheet's parts, by field id. A field the Mac adds later lands in "More". */
+const GROUPS: { title: string; ids: string[]; folded?: boolean }[] = [
+  { title: 'Shot', ids: ['together', 'level', 'pose', 'shot'] },
+  { title: 'Her', ids: ['wearing', 'colour', 'doing', 'expression'] },
+  { title: 'Scene', ids: ['where', 'light'] },
+  { title: 'More', ids: ['view', 'him', 'extra'], folded: true },
+];
+const GROUPED = new Set(GROUPS.flatMap((g) => g.ids));
+
+/** A chip's words: a long suggestion ("heavy-lidded eyes on the lens, lips slightly apart, …") cut
+ * to its first clause, so a row shows several chips, not one truncated sentence. */
+const short = (text: string) => {
+  const head = text.split(/[,;:]/)[0].trim();
+  const cut = head.length > 30 ? `${head.slice(0, 28).trimEnd()}…` : head;
+  return cut.charAt(0).toUpperCase() + cut.slice(1);
+};
+
 /**
- * The photo director: a row of chips (and a box, for words) per part of the photo. Opens
- * on what he pinned in this scene, or on one photo's own choices with `like` — "same photo,
- * change one thing", drawn with that photo's seed. An empty field is the scene as it is on
- * the Mac (shown as "now:"), and each row offers the chips that fit the scene first.
- * "Fill from the moment" asks the Mac to plan the moment like the camera button would and
- * fills every chip with it. The prompt his choices make is shown as he picks.
+ * The photo director: chips (and a box, for words) per part of the photo, in four groups —
+ * Shot, Her, Scene, and More (folded). Opens on what he pinned in this scene, or on one
+ * photo's own choices with `like` — "same photo, change one thing", drawn with that photo's
+ * seed. An empty field is the scene as it is on the Mac (shown as "now:"), and each row offers
+ * the chips that fit the scene first. "Fill from the moment" asks the Mac to plan the moment
+ * like the camera button would and fills every chip with it. The prompt his choices make is
+ * shown as he picks, and he can edit it: an edited prompt is drawn as he wrote it.
  */
 export function DirectorSheet({
   lane,
@@ -56,6 +74,9 @@ export function DirectorSheet({
   const [count, setCount] = useState(1);
   const [preview, setPreview] = useState<{ prompt: string; notes: string[] } | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  /** His own words for the prompt; null = the prompt the chips make. */
+  const [edited, setEdited] = useState<string | null>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [sending, setSending] = useState(false);
   const [filling, setFilling] = useState(false);
 
@@ -74,8 +95,8 @@ export function DirectorSheet({
   }, [lane, like]);
 
   const request = useMemo(
-    () => ({ direction: choice, like: sameSeed && like ? like.name : undefined, pin, count }),
-    [choice, sameSeed, like, pin, count]
+    () => ({ direction: choice, like: sameSeed && like ? like.name : undefined, pin, count, prompt: edited?.trim() || undefined }),
+    [choice, sameSeed, like, pin, count, edited]
   );
 
   // The prompt, asked again a moment after he stops picking.
@@ -131,6 +152,7 @@ export function DirectorSheet({
 
   const clearAll = async () => {
     setChoice({});
+    setEdited(null);
     try {
       await clearDirection(lane);
     } catch (e) {
@@ -143,6 +165,22 @@ export function DirectorSheet({
   const shown = (f: DirectorField) =>
     (f.id !== 'pose' || ACT_LEVELS.includes(level) || !!choice.pose) &&
     (f.id !== 'him' || together);
+  const locked = edited !== null;
+
+  const groups = director
+    ? GROUPS.map((g) => ({
+        ...g,
+        fields: director.fields.filter(
+          (f) => shown(f) && (g.ids.includes(f.id) || (g.title === 'More' && !GROUPED.has(f.id)))
+        ),
+      })).filter((g) => g.fields.length)
+    : [];
+
+  const editPrompt = () => {
+    void Haptics.selectionAsync();
+    setShowPrompt(true);
+    setEdited(preview?.prompt ?? '');
+  };
 
   return (
     <BottomSheet title={like ? 'Change this photo' : 'Direct a photo'} error={error} onClose={onClose}>
@@ -151,67 +189,135 @@ export function DirectorSheet({
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-            <View style={styles.wrap}>
-              <Chip
-                title={filling ? 'Reading the moment…' : 'Fill from the moment'}
-                accent={accent}
-                icon={<Sparkles size={12} color={Palette.muted} />}
-                onPress={() => (filling ? undefined : void fillFromMoment())}
-              />
-            </View>
+            <PressableScale
+              onPress={() => (filling || locked ? undefined : void fillFromMoment())}
+              accessibilityRole="button"
+              accessibilityState={{ busy: filling, disabled: locked }}
+              style={[styles.fill, { borderColor: accent, opacity: locked ? 0.4 : 1 }]}>
+              <Sparkles size={16} color={accent} />
+              <View style={styles.flex}>
+                <Text style={styles.fillTitle}>{filling ? 'Reading the moment…' : 'Fill from the moment'}</Text>
+                <Meta style={styles.hint}>Her model reads the chat and fills every part. Change any of it after.</Meta>
+              </View>
+              {filling ? <TypingIndicator color={accent} /> : null}
+            </PressableScale>
             {!like && Object.keys(director.pins).length && choice === director.pins ? (
               <Meta style={styles.note}>Your pin from this scene.</Meta>
             ) : null}
-            {director.fields.filter(shown).map((f) => (
-              <FieldRow
-                key={f.id}
-                field={f}
-                suggested={director.suggest?.[f.id] ?? []}
-                value={choice[f.id] ?? ''}
-                now={director.defaults[f.id] ?? ''}
-                accent={accent}
-                onChange={(v) => set(f.id, v)}
-                onType={(v) => set(f.id, v, false)}
-              />
-            ))}
 
-            <View style={styles.section}>
-              <Meta style={styles.label}>Photos</Meta>
-              <View style={styles.wrap}>
-                {COUNTS.map((n) => (
-                  <Chip key={n} title={String(n)} selected={count === n} accent={accent} onPress={() => setCount(n)} />
-                ))}
-                <Chip
-                  title={pin ? 'Pin for this scene' : 'Just this once'}
-                  selected={pin}
-                  accent={accent}
-                  icon={pin ? <Pin size={12} color={Palette.ground} /> : <PinOff size={12} color={Palette.muted} />}
-                  onPress={() => setPin((p) => !p)}
-                />
-                {like?.seed ? (
-                  <Chip title="Same seed" selected={sameSeed} accent={accent} onPress={() => setSameSeed((s) => !s)} />
-                ) : null}
-                {Object.keys(choice).length ? <Chip title="Clear all" accent={accent} onPress={() => void clearAll()} /> : null}
-              </View>
+            <View style={[styles.groups, locked ? styles.dimmed : null]} pointerEvents={locked ? 'none' : 'auto'}>
+              {groups.map((g) => {
+                const set_ = g.fields.filter((f) => choice[f.id]).length;
+                const isOpen = open[g.title] ?? !g.folded;
+                return (
+                  <View key={g.title} style={styles.group}>
+                    <PressableScale
+                      onPress={() => setOpen((o) => ({ ...o, [g.title]: !isOpen }))}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isOpen }}
+                      style={styles.groupHead}>
+                      <Text style={styles.groupTitle}>{g.title}</Text>
+                      {set_ ? <Meta style={{ color: accent }}>{set_} set</Meta> : null}
+                      <View style={styles.flex} />
+                      {isOpen ? <ChevronUp size={16} color={Palette.muted} /> : <ChevronDown size={16} color={Palette.muted} />}
+                    </PressableScale>
+                    {isOpen
+                      ? g.fields.map((f) => (
+                          <FieldRow
+                            key={f.id}
+                            field={f}
+                            suggested={director.suggest?.[f.id] ?? []}
+                            value={choice[f.id] ?? ''}
+                            now={director.defaults[f.id] ?? ''}
+                            accent={accent}
+                            onChange={(v) => set(f.id, v)}
+                            onType={(v) => set(f.id, v, false)}
+                          />
+                        ))
+                      : null}
+                  </View>
+                );
+              })}
             </View>
 
-            {preview?.notes.length ? <Meta style={styles.note}>{preview.notes.join(' ')}</Meta> : null}
-            <PressableScale onPress={() => setShowPrompt((s) => !s)} hitSlop={6} style={styles.promptToggle} accessibilityRole="button">
-              <Meta>{showPrompt ? 'Hide the prompt' : 'Show the prompt'}</Meta>
-              {showPrompt ? <ChevronUp size={14} color={Palette.muted} /> : <ChevronDown size={14} color={Palette.muted} />}
-            </PressableScale>
-            {showPrompt && preview ? (
-              <Text selectable style={styles.prompt}>
-                {preview.prompt}
-              </Text>
-            ) : null}
+            <View style={styles.group}>
+              <View style={styles.groupHead}>
+                <Text style={styles.groupTitle}>Prompt</Text>
+                {locked ? <Meta style={{ color: accent }}>edited</Meta> : null}
+                <View style={styles.flex} />
+                {locked ? (
+                  <Chip title="Back to the chips" accent={accent} onPress={() => setEdited(null)} />
+                ) : (
+                  <>
+                    <Chip title="Edit" accent={accent} icon={<Pencil size={12} color={Palette.muted} />} onPress={editPrompt} />
+                    <PressableScale
+                      onPress={() => setShowPrompt((s) => !s)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={showPrompt ? 'Hide the prompt' : 'Show the prompt'}>
+                      {showPrompt ? <ChevronUp size={16} color={Palette.muted} /> : <ChevronDown size={16} color={Palette.muted} />}
+                    </PressableScale>
+                  </>
+                )}
+              </View>
+              {preview?.notes.length ? <Meta style={styles.note}>{preview.notes.join(' ')}</Meta> : null}
+              {locked ? (
+                <>
+                  <TextInput
+                    value={edited}
+                    onChangeText={setEdited}
+                    multiline
+                    autoFocus
+                    style={[styles.input, styles.promptInput]}
+                    placeholderTextColor={Palette.faint}
+                    placeholder="The whole prompt, as the image model reads it"
+                    accessibilityLabel="Prompt"
+                  />
+                  <Meta style={styles.hint}>Drawn exactly as written. The chips above do not change it until you go back to them.</Meta>
+                </>
+              ) : showPrompt && preview ? (
+                <Text selectable style={styles.prompt}>
+                  {preview.prompt}
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={styles.wrap}>
+              <Chip
+                title={pin ? 'Pin for this scene' : 'Just this once'}
+                selected={pin}
+                accent={accent}
+                icon={pin ? <Pin size={12} color={Palette.ground} /> : <PinOff size={12} color={Palette.muted} />}
+                onPress={() => setPin((p) => !p)}
+              />
+              {like?.seed ? (
+                <Chip title="Same seed" selected={sameSeed} accent={accent} onPress={() => setSameSeed((s) => !s)} />
+              ) : null}
+              {Object.keys(choice).length || locked ? (
+                <Chip title="Clear all" accent={accent} onPress={() => void clearAll()} />
+              ) : null}
+            </View>
           </ScrollView>
           <View style={styles.footer}>
+            <View style={styles.counts} accessibilityRole="radiogroup" accessibilityLabel="How many photos">
+              {COUNTS.map((n) => (
+                <PressableScale
+                  key={n}
+                  onPress={() => setCount(n)}
+                  hitSlop={4}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: count === n }}
+                  style={[styles.count, count === n ? { backgroundColor: accent, borderColor: accent } : null]}>
+                  <Text style={[styles.chipText, count === n ? styles.chipTextOn : null]}>{n}</Text>
+                </PressableScale>
+              ))}
+            </View>
             <PressableScale
               onPress={() => void send()}
-              disabled={sending}
+              disabled={sending || (locked && !edited?.trim())}
               accessibilityRole="button"
-              style={[styles.go, { backgroundColor: accent, opacity: sending ? 0.5 : 1 }]}>
+              style={[styles.go, styles.flex, { backgroundColor: accent, opacity: sending ? 0.5 : 1 }]}>
               <Text style={styles.goText}>{sending ? 'Sending…' : count === 1 ? 'Take the photo' : `Take ${count} photos`}</Text>
             </PressableScale>
           </View>
@@ -241,7 +347,10 @@ function FieldRow({
 }) {
   const nowLabel = field.choices.find((c) => c.value === now)?.label ?? now;
   const fixed = new Set(suggested);
-  const chips = [...suggested.map((v) => ({ value: v, label: v })), ...field.choices.filter((c) => !fixed.has(c.value))];
+  const chips = [
+    ...suggested.map((v) => ({ value: v, label: short(v) })),
+    ...field.choices.filter((c) => !fixed.has(c.value)).map((c) => ({ ...c, label: short(c.label) })),
+  ];
   return (
     <View style={styles.section}>
       <View style={styles.labelRow}>
@@ -426,9 +535,34 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     maxHeight: 90,
   },
-  promptToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   prompt: { fontFamily: Font.ui, fontSize: 12, lineHeight: 17, color: Palette.muted },
-  footer: { paddingHorizontal: Gutter, paddingTop: Space.sm },
+  promptInput: { maxHeight: 220, minHeight: 120, fontSize: 12, lineHeight: 17, textAlignVertical: 'top' },
+  fill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.md,
+    padding: Space.md,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: Palette.surfaceGlass,
+  },
+  fillTitle: { fontFamily: Font.uiMedium, fontSize: 14, color: Palette.text },
+  group: { gap: Space.sm, paddingTop: Space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Palette.hairline },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, minHeight: 32 },
+  groupTitle: { fontFamily: Font.uiMedium, fontSize: 15, color: Palette.text },
+  groups: { gap: Space.md },
+  dimmed: { opacity: 0.35 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingHorizontal: Gutter, paddingTop: Space.sm },
+  counts: { flexDirection: 'row', gap: 6 },
+  count: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+  },
   buttons: { flexDirection: 'row', gap: Space.sm, marginTop: Space.sm },
   flex: { flex: 1 },
   go: { height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Space.lg },
