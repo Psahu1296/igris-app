@@ -15,7 +15,8 @@ import * as secure from '@/lib/secure';
 
 /** A photo she sent (maestro companion/photos.py), drawn on the Mac from her base face. */
 /** Which eyes a photo of hers is seen from again: his, or hers. */
-export type PhotoView = { name: string; view: 'his' | 'hers' };
+// 'both': a third person's camera, the two of them in the frame, his face too (maestro camera.Shot.both).
+export type PhotoView = { name: string; view: 'his' | 'hers' | 'both' };
 
 export type CompanionPhoto = {
   name: string;

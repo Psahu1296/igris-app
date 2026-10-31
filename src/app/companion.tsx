@@ -149,6 +149,12 @@ const POLL_TRIES = 40;
  */
 /** How long a pause at the edge lasts before she notices (maestro arousal.CLOSE). */
 const PAUSE_MS = 8000;
+// The views a photo of hers can be drawn again from (POST /companion/view).
+const VIEW_LABELS: Record<PhotoView['view'], { label: string; a11y: string }> = {
+  his: { label: 'Your view', a11y: 'This moment from your eyes' },
+  hers: { label: 'Her view', a11y: 'This moment from her eyes' },
+  both: { label: 'Both of you', a11y: 'This moment from a third person, both of you in the frame' },
+};
 
 export default function CompanionScreen() {
   const [who, setWho] = useState(companionWho.get);
@@ -1383,16 +1389,16 @@ function Bubble({
           ) : null}
           {onView ? (
             <View style={styles.viewRow}>
-              {(['his', 'hers'] as const).map((v) => (
+              {(['his', 'hers', 'both'] as const).map((v) => (
                 <PressableScale
                   key={v}
                   onPress={() => onView(image, v)}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel={v === 'his' ? 'This moment from your eyes' : 'This moment from her eyes'}
+                  accessibilityLabel={VIEW_LABELS[v].a11y}
                   style={styles.viewBadge}>
                   <Eye size={11} color={Palette.text} />
-                  <Meta style={styles.faceBadgeText}>{v === 'his' ? 'Your view' : 'Her view'}</Meta>
+                  <Meta style={styles.faceBadgeText}>{VIEW_LABELS[v].label}</Meta>
                 </PressableScale>
               ))}
               {onChange && image.direction ? (
