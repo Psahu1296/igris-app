@@ -967,8 +967,18 @@ export function predictBars(bars: CompanionArousal, touch: CompanionTouch, taps:
   return { ...bars, her, his, close: her >= 0.85 };
 }
 
-/** How detailed her photos are (maestro companion/quality.py): the drawing steps, their range and the named presets. */
-export type PhotoQuality = { steps: number; default: number; min: number; max: number; presets: { id: string; label: string; steps: number }[] };
+/** How detailed her photos are (maestro companion/quality.py): the drawing steps, their range and the named presets,
+ * and the size she is drawn at (`sizes`: `time` is the drawing time against the first size). An older maestro sends no size. */
+export type PhotoSize = { id: string; label: string; width: number; height: number; time: number };
+export type PhotoQuality = {
+  steps: number;
+  default: number;
+  min: number;
+  max: number;
+  presets: { id: string; label: string; steps: number }[];
+  size?: string;
+  sizes?: PhotoSize[];
+};
 
 export async function fetchPhotoQuality(lane: Lane): Promise<PhotoQuality> {
   const res = await authedFetch(lane, '/companion/photo-quality');
@@ -976,11 +986,11 @@ export async function fetchPhotoQuality(lane: Lane): Promise<PhotoQuality> {
   return (await res.json()) as PhotoQuality;
 }
 
-export async function setPhotoQuality(lane: Lane, steps: number): Promise<PhotoQuality> {
+export async function setPhotoQuality(lane: Lane, change: { steps?: number; size?: string }): Promise<PhotoQuality> {
   const res = await authedFetch(lane, '/companion/photo-quality', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ steps }),
+    body: JSON.stringify(change),
   });
   if (!res.ok) throw new Error(`The Mac refused (${res.status}).`);
   return (await res.json()) as PhotoQuality;

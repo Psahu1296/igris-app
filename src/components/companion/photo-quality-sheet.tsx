@@ -12,9 +12,9 @@ import { fetchPhotoQuality, setPhotoQuality, type PhotoQuality } from '@/lib/com
 import type { Lane } from '@/lib/maestro';
 
 /**
- * How detailed her photos are: the drawing steps (maestro companion/quality.py), changed any
- * time and used by the next photo. More steps add texture and take longer; fewer are quick drafts.
- * The Mac keeps the value; every tap saves it.
+ * How detailed her photos are: the drawing steps and the size (maestro companion/quality.py), changed
+ * any time and used by the next photo. More steps add texture and take longer; fewer are quick drafts.
+ * A bigger size draws finer skin and hair, slower. The Mac keeps both; every tap saves.
  */
 export function PhotoQualitySheet({ lane, accent, onClose }: { lane: Lane; accent: string; onClose: () => void }) {
   const [quality, setQuality] = useState<PhotoQuality | null>(null);
@@ -34,7 +34,16 @@ export function PhotoQualitySheet({ lane, accent, onClose }: { lane: Lane; accen
     if (!quality || steps < quality.min || steps > quality.max || steps === quality.steps) return;
     void Haptics.selectionAsync();
     setQuality({ ...quality, steps });
-    setPhotoQuality(lane, steps)
+    setPhotoQuality(lane, { steps })
+      .then(setQuality)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  };
+
+  const pickSize = (size: string) => {
+    if (!quality || size === quality.size) return;
+    void Haptics.selectionAsync();
+    setQuality({ ...quality, size });
+    setPhotoQuality(lane, { size })
       .then(setQuality)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   };
@@ -77,6 +86,30 @@ export function PhotoQualitySheet({ lane, accent, onClose }: { lane: Lane; accen
               );
             })}
           </View>
+          {quality.sizes?.length ? (
+            <>
+              <Meta>Size: bigger shows finer skin and hair, and takes longer.</Meta>
+              <View style={styles.presets}>
+                {quality.sizes.map((z) => {
+                  const on = quality.size === z.id;
+                  return (
+                    <Pressable
+                      key={z.id}
+                      onPress={() => pickSize(z.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`${z.label}, ${z.width} by ${z.height}`}
+                      style={[styles.preset, { borderColor: on ? accent : Palette.hairline }, on && { backgroundColor: `${accent}26` }]}>
+                      <Text style={[styles.presetLabel, on && { color: accent }]}>{z.label}</Text>
+                      <Text style={styles.presetSteps}>
+                        {z.width}×{z.height} · {z.time}×
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
         </View>
       ) : null}
     </BottomSheet>
